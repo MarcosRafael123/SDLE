@@ -1,4 +1,5 @@
 import zmq
+import hashlib
 
 LRU_READY = "\x01"
 
@@ -54,6 +55,25 @@ class Broker:
                 request = [workers.pop(0), ''.encode()] + msg
                 backend.send_multipart(request)
 
+    # implement some hashing function to position the shopping list in the hash ring
+    def hash_shopping_list(url):
+        
+        sha = hashlib.sha256()
+
+        sha.update(url.encode('utf-8'))
+ 
+        return sha.hexdigest()
+
+    def hash_server(port):
+        
+        sha = hashlib.sha256()
+        
+        sha.update(port.encode('utf-8'))
+        
+        return sha.hexdigest()
+
+        
+        
 
 def main():
     portFrontend = "5555"

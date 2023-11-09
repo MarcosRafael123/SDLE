@@ -1,6 +1,6 @@
 class ShoppingList :
-    def __init__(self, name, items):
-        self.name = name
+    def __init__(self, url, items):
+        self.url = url
         self.items = items
 
     def add_item(self, item):
