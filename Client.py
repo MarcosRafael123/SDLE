@@ -3,6 +3,7 @@ import logging
 import sys
 import zmq
 import ShoppingList
+import json
 
 REQUEST_TIMEOUT = 2500
 REQUEST_RETRIES = 3
@@ -77,9 +78,20 @@ class Client:
                 logging.info("Resending (%s)", request)
                 client.send(request)
 
+    def pack_message(self, shoppinglist): 
+        dictionary = {}
+
+        dictionary["url"] = shoppinglist.get_url()
+        dictionary["items"] = shoppinglist.get_items()
+
+        return json.dumps(dictionary, sort_keys=True)
+
+    def unpack_message(self, msg):
+        return json.loads(msg[2])
+
     def create_shopping_list(self, url):
         
-        #shopping_list = ShoppingList.ShoppingList(url, items)
+        shopping_list = ShoppingList.ShoppingList(url)
 
         # send to broker new shopping list
         context = zmq.Context()
@@ -87,7 +99,7 @@ class Client:
         logging.info("Connecting to server…")
         client = context.socket(zmq.REQ)
         client.connect("tcp://localhost:" + self.port)
-        client.send(url.encode('utf-8'))
+        client.send(self.pack_message(shopping_list).encode('utf-8'))
 
         retries_left = REQUEST_RETRIES
 

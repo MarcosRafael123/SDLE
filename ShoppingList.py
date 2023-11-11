@@ -1,7 +1,7 @@
 class ShoppingList :
-    def __init__(self, url, items):
+    def __init__(self, url):
         self.url = url
-        self.items = items
+        self.items = {}
 
     def add_item(self, item):
         self.items.append(item)
@@ -9,8 +9,8 @@ class ShoppingList :
     def remove_item(self, item):
         self.items.remove(item)
 
-    def get_name(self):
-        return self.name
+    def get_url(self):
+        return self.url
     
     def get_items(self):
         return self.items

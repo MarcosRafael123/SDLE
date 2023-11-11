@@ -1,6 +1,7 @@
 from random import randint
 import time
 import zmq
+import json
 
 LRU_READY = "\x01"
 
@@ -14,6 +15,17 @@ class Server:
 
     def get_port(self):
         return self.port
+    
+    def pack_message(self, shoppinglist): 
+        dictionary = {}
+
+        dictionary["url"] = shoppinglist.get_url()
+        dictionary["items"] = shoppinglist.get_items()
+
+        return json.dumps(dictionary, sort_keys=True)
+    
+    def unpack_message(self, msg):
+        return json.loads(msg[2])
     
     def run(self):
 
@@ -30,9 +42,7 @@ class Server:
             if not msg:
                 break
 
-            print(msg)
-
-            print(type(msg))
+            #print(type(self.unpack_message(msg)))
 
             msg[2] = "message received".encode('utf-8')
 
