@@ -19,6 +19,8 @@ class Client:
         self.password = password
         self.host = None  """
         self.port = port 
+        self.connected = True
+        self.shopping_lists = []
         
     """ def set_host(self, host):
         self.host = host """
@@ -36,47 +38,101 @@ class Client:
         return self.port
     
     def run(self): 
+        while True: 
+            print("1) Create new shopping list")
+            print("2) Edit shopping list")
 
-        logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
+            if self.connected:
+                print("3) Go offline")
+                
+            else:
+                print("3) Go online")
+            
+            print("4) Exit")
 
-        context = zmq.Context()
+            
+            choice = input("Enter your choice: ")
 
-        logging.info("Connecting to server…")
-        client = context.socket(zmq.REQ)
-        client.connect("tcp://localhost:" + self.port)
+            if choice == "1":
+                url = input("Enter the url of the shopping list: ")
+                self.create_shopping_list(url)
+                
+            elif choice == "2":
+                
+                shopping_list = self.display_shopping_lists()
 
-        for sequence in itertools.count():
-            request = str(sequence).encode()
-            logging.info("Sending (%s)", request)
-            client.send(request)
+                if shopping_list == -1:
+                    continue
 
-            retries_left = REQUEST_RETRIES
-            while True:
-                if (client.poll(REQUEST_TIMEOUT) & zmq.POLLIN) != 0:
-                    reply = client.recv()
-                    if int(reply) == sequence:
-                        logging.info("Server replied OK (%s)", reply)
-                        retries_left = REQUEST_RETRIES
-                        break
+                while True:
+                    self.inspect_shopping_list(shopping_list)
+
+                    print("1) Add item")
+                    print("2) Remove item")
+                    print("3) Exit")
+
+                    choice2 = input("Enter your choice: ")
+                    
+                    if choice2 == "1":
+                        self.add_item_shopping_list(shopping_list)
+                    elif choice2 == "2": 
+                        self.remove_item_shopping_list(shopping_list)
                     else:
-                        logging.error("Malformed reply from server: %s", reply)
-                        continue
+                        break
+                    
+            elif choice == "3":
+                if self.connected: 
+                    self.connected = False
+                    print("You are now offline")
+                else:
+                    self.connected = True
+                    print("You are now online")
 
-                retries_left -= 1
-                logging.warning("No response from server")
-                # Socket is confused. Close and remove it.
-                client.setsockopt(zmq.LINGER, 0)
-                client.close()
-                if retries_left == 0:
-                    logging.error("Server seems to be offline, abandoning")
-                    sys.exit()
+            elif choice == "4":
+                print("exit")
+                break
+            else:
+                print("Invalid choice")
+        
 
-                logging.info("Reconnecting to server…")
-                # Create new connection
-                client = context.socket(zmq.REQ)
-                client.connect("tcp://localhost:" + self.port)
-                logging.info("Resending (%s)", request)
-                client.send(request)
+    def display_shopping_lists(self):
+        counter = 1
+        dict = {}
+
+        if self.shopping_lists == []:
+            print("You have no shopping lists")
+            return -1
+
+        while True:
+            for shopping_list in self.shopping_lists:
+                dict[counter] = shopping_list
+                print(str(counter) + ") " + shopping_list.get_url())
+                counter += 1
+            
+            choice = input("Enter your choice: ")
+            if int(choice) in dict:
+                return dict[int(choice)]
+            
+            else:
+                print("Invalid choice")
+                counter = 1
+
+
+    def add_item_shopping_list(self, shoppinglist):
+        item = input("Enter the item you want to add: ")
+        quantity = input("Enter the quantity: ")
+
+        shoppinglist.add_item(item, int(quantity))
+            
+
+    def remove_item_shopping_list(self, shoppinglist):
+        item = input("Enter the item you want to remove: ")
+        quantity = input("Enter the quantity: ")
+
+        shoppinglist.remove_item(item, int(quantity))
+
+    def inspect_shopping_list(self, shoppinglist):
+        shoppinglist.print_list()
 
     def pack_message(self, shoppinglist): 
         dictionary = {}
@@ -92,6 +148,8 @@ class Client:
     def create_shopping_list(self, url):
         
         shopping_list = ShoppingList.ShoppingList(url)
+
+        self.shopping_lists.append(shopping_list)
 
         # send to broker new shopping list
         context = zmq.Context()
@@ -144,7 +202,9 @@ def main():
 
     client = Client(portFrontend)
 
-    client.create_shopping_list(url)
+    #client.create_shopping_list(url)
+
+    client.run()
 
 if __name__ == "__main__":
     main()

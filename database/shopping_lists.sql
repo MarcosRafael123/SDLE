@@ -19,5 +19,7 @@ CREATE TABLE IF NOT EXISTS client (
     username TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     email TEXT NOT NULL,
-    password TEXT NOT NULL
+    password TEXT NOT NULL,
+    routers ARRAY, 
+    connected BOOLEAN
 );
