@@ -27,6 +27,9 @@ class Server:
     def unpack_message(self, msg):
         return json.loads(msg[2])
     
+    def send_shopping_list(self, shoppinglist):
+        
+    
     def run(self):
 
         context = zmq.Context()
@@ -38,11 +41,11 @@ class Server:
 
         while True:
             msg = worker.recv_multipart()
-            
+
             if not msg:
                 break
 
-            #print(type(self.unpack_message(msg)))
+            print(self.unpack_message(msg))
 
             msg[2] = "message received".encode('utf-8')
 
