@@ -28,7 +28,7 @@ class Server:
         return json.loads(msg[2])
     
     def send_shopping_list(self, shoppinglist):
-        
+        return
     
     def run(self):
 
