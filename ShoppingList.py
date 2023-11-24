@@ -2,6 +2,7 @@ class ShoppingList :
     def __init__(self, url):
         self.url = url
         self.items = {}
+        self.key = None
 
     def add_item(self, item, quantity):
         if item in self.items:
@@ -21,6 +22,9 @@ class ShoppingList :
     
     def get_items(self):
         return self.items
+    
+    def get_key(self):
+        return self.key
 
     def print_list(self):
         print("Shopping list for " + self.url + ":")

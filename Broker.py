@@ -77,7 +77,14 @@ class Broker:
             if socks.get(frontend) == zmq.POLLIN:
                 #  Get client request, route to first available worker
                 msg = frontend.recv_multipart()
-                print(msg)
+                shoppingList = json.loads(msg[2].decode('utf-8'))
+                print(shoppingList)
+
+                if (shoppingList["key"] == None):
+                    key = self._hash(shoppingList["url"])
+                    shoppingList["key"] = key
+                    msg[2] = json.dumps(shoppingList).encode('utf-8')
+
                 request = [workers.pop(0), ''.encode()] + msg
                 backend.send_multipart(request)
     

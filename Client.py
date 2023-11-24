@@ -143,6 +143,7 @@ class Client:
 
         dictionary["url"] = shoppinglist.get_url()
         dictionary["items"] = shoppinglist.get_items()
+        dictionary["key"] = shoppinglist.get_key()
 
         return json.dumps(dictionary, sort_keys=True)
 
