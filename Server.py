@@ -2,6 +2,7 @@ from random import randint
 import time
 import zmq
 import json
+import logging
 
 LRU_READY = "\x01"
 
@@ -9,6 +10,12 @@ class Server:
     def __init__(self, port): 
         self.port = port 
         self.shopping_lists = []
+        context = zmq.Context()
+        logging.info("Connecting to broker...")
+        worker = context.socket(zmq.REQ)
+        worker.connect("tcp://localhost:" + self.port)
+        worker.send(json.dumps("port:" + str(self.port)).encode('utf-8'))
+        
 
     def set_port(self, port):
         self.port = port

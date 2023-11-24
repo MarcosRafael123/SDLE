@@ -2,12 +2,16 @@ import zmq
 import hashlib
 
 LRU_READY = "\x01"
+PORT = "port:"
 
 class Broker: 
-    def __init__(self, portFrontend, portBackend): 
+    def __init__(self, portFrontend, portBackend, nodes=None, hash_func = hashlib.sha256): 
         self.portFrontend = portFrontend # for clients
         self.portBackend = portBackend # for servers
         self.servers = {}
+        self.hash_func = hash_func
+        self.ring = {}
+        self.sorted_keys = []
 
     def run(self): 
 
@@ -45,6 +49,10 @@ class Broker:
                 # Everything after the second (delimiter) frame is reply
                 reply = msg[2:]
 
+                if (PORT in reply[0].decode('utf-8')):
+                    #print(reply[0].decode('utf-8').split(':')[1].strip('"'))
+                    self.add_node(reply[0].decode('utf-8').split(':')[1].strip('"'))
+
                 # Forward message to client if it's not a READY
                 if reply[0] != LRU_READY:
                     frontend.send_multipart(reply)
@@ -54,24 +62,34 @@ class Broker:
                 msg = frontend.recv_multipart()
                 request = [workers.pop(0), ''.encode()] + msg
                 backend.send_multipart(request)
+    
+    def _hash(self, key):
+        return int(self.hash_func(str(key).encode()).hexdigest(), 16)
 
-    # implement some hashing function to position the shopping list in the hash ring
-    def hash_shopping_list(url):
-        
-        sha = hashlib.sha256()
+    def add_node(self, node):
+        key = self._hash(f"{node}")
+        self.ring[key] = int(node)
+        self.sorted_keys.append(key)
+        self.sorted_keys.sort()
+        print(self.ring)
 
-        sha.update(url.encode('utf-8'))
- 
-        return sha.hexdigest()
+"""     def remove_node(self, node):
+        for i in range(self.replicas):
+            replica_key = self._hash(f"{node}:{i}")
+            del self.ring[replica_key]
+            self.sorted_keys.remove(replica_key)
 
-    def hash_server(port):
-        
-        sha = hashlib.sha256()
-        
-        sha.update(port.encode('utf-8'))
-        
-        return sha.hexdigest()
+    def get_node(self, key):
+        if not self.ring:
+            return None
 
+        h = self._hash(key)
+        nodes = self.sorted_keys
+        for i in range(len(nodes)):
+            if h <= nodes[i]:
+                return self.ring[nodes[i]]
+        return self.ring[nodes[0]]
+ """
         
         
 
