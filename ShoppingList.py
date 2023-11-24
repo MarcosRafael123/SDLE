@@ -3,6 +3,30 @@ class ShoppingList :
         self.url = url
         self.items = {}
         self.key = None
+        self.timestamp = None
+
+    # getters
+    def get_url(self):
+        return self.url
+    
+    def get_items(self):
+        return self.items
+    
+    def get_key(self):
+        return self.key
+    
+    def get_timestamp(self):
+        return self.timestamp
+    
+    # setters
+    def set_timestamp(self, timestamp):
+        self.timestamp = timestamp
+
+    # other methods
+    def print_list(self):
+        print("Shopping list for " + self.url + ":")
+        for item in self.items:
+            print(item + ": " + str(self.items[item]))
 
     def add_item(self, item, quantity):
         if item in self.items:
@@ -16,17 +40,3 @@ class ShoppingList :
                 del self.items[item]
             else:
                 self.items[item] -= quantity
-
-    def get_url(self):
-        return self.url
-    
-    def get_items(self):
-        return self.items
-    
-    def get_key(self):
-        return self.key
-
-    def print_list(self):
-        print("Shopping list for " + self.url + ":")
-        for item in self.items:
-            print(item + ": " + str(self.items[item]))

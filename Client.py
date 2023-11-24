@@ -4,6 +4,7 @@ import sys
 import zmq
 import ShoppingList
 import json
+import time
 
 REQUEST_TIMEOUT = 2500
 REQUEST_RETRIES = 3
@@ -144,6 +145,7 @@ class Client:
         dictionary["url"] = shoppinglist.get_url()
         dictionary["items"] = shoppinglist.get_items()
         dictionary["key"] = shoppinglist.get_key()
+        dictionary["timestamp"] = shoppinglist.get_timestamp()
 
         return json.dumps(dictionary, sort_keys=True)
 
@@ -153,6 +155,7 @@ class Client:
     def create_shopping_list(self, url):
         
         shopping_list = ShoppingList.ShoppingList(url)
+        shopping_list.set_timestamp(time.time())
 
         self.shopping_lists.append(shopping_list)
 
