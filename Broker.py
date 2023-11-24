@@ -1,5 +1,6 @@
 import zmq
 import hashlib
+import json
 
 LRU_READY = "\x01"
 PORT = "port:"
@@ -48,10 +49,26 @@ class Broker:
 
                 # Everything after the second (delimiter) frame is reply
                 reply = msg[2:]
+                print(reply)
+                if (len(reply) == 1):
+                    if (PORT in reply[0].decode('utf-8')):
+                        key = self.add_node(reply[0].decode('utf-8').split(':')[1].strip('"'))
 
-                if (PORT in reply[0].decode('utf-8')):
-                    #print(reply[0].decode('utf-8').split(':')[1].strip('"'))
-                    self.add_node(reply[0].decode('utf-8').split(':')[1].strip('"'))
+                        message = str(key)
+
+                        msg[2] = message.encode('utf-8')
+
+                        backend.send_multipart(msg)
+
+                else:
+                    if (PORT in reply[2].decode('utf-8')):
+                        key = self.add_node(reply[0].decode('utf-8').split(':')[1].strip('"'))
+
+                        message = str(key)
+
+                        msg[2] = message.encode('utf-8')
+
+                        backend.send_multipart(msg)
 
                 # Forward message to client if it's not a READY
                 if reply[0] != LRU_READY:
@@ -60,6 +77,7 @@ class Broker:
             if socks.get(frontend) == zmq.POLLIN:
                 #  Get client request, route to first available worker
                 msg = frontend.recv_multipart()
+                print(msg)
                 request = [workers.pop(0), ''.encode()] + msg
                 backend.send_multipart(request)
     
@@ -72,6 +90,7 @@ class Broker:
         self.sorted_keys.append(key)
         self.sorted_keys.sort()
         print(self.ring)
+        return key
 
 """     def remove_node(self, node):
         for i in range(self.replicas):

@@ -18,9 +18,12 @@ class Client:
         self.email = email
         self.password = password
         self.host = None  """
+        self.context = zmq.Context()
+        self.brokerPorts = ["5555"]
         self.port = port 
         self.connected = True
         self.shopping_lists = []
+        self.run()
         
     """ def set_host(self, host):
         self.host = host """
@@ -152,12 +155,9 @@ class Client:
 
         self.shopping_lists.append(shopping_list)
 
-        # send to broker new shopping list
-        context = zmq.Context()
-
         logging.info("Connecting to server…")
-        client = context.socket(zmq.REQ)
-        client.connect("tcp://localhost:" + self.port)
+        client = self.context.socket(zmq.REQ)
+        client.connect("tcp://localhost:" + self.brokerPorts[0])
         client.send(self.pack_message(shopping_list).encode('utf-8'))
 
         retries_left = REQUEST_RETRIES
@@ -165,8 +165,8 @@ class Client:
         counter = 0
 
         while True:
-            print(client.poll(REQUEST_TIMEOUT))
-            print(zmq.POLLIN)
+            print("CLIENT.POLL: ", client.poll(REQUEST_TIMEOUT))
+            print("ZMQ.POLLIN: ", zmq.POLLIN)
             if (client.poll(REQUEST_TIMEOUT) & zmq.POLLIN) != 0:
                 reply = client.recv_multipart()
 
@@ -189,23 +189,16 @@ class Client:
 
             # Create new connection
             logging.info("Reconnecting to server…")
-            client = context.socket(zmq.REQ)
+            client = self.context.socket(zmq.REQ)
             client.connect("tcp://localhost:" + self.port)
             logging.info("Resending (%s)", counter)
             client.send(url.encode('utf-8'))
 
 
-def main():
-    portFrontend = "5555"
-
-    url = "http://my-first-shopping-list.com"
-    items = None
-
-    client = Client(portFrontend)
-
-    #client.create_shopping_list(url)
-
-    client.run()
-
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) != 2:
+        print("Usage: python ./Client.py <port>")
+        sys.exit(1)
+
+    port = sys.argv[1]
+    Client(port)

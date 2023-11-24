@@ -3,19 +3,29 @@ import time
 import zmq
 import json
 import logging
+import sys
 
 LRU_READY = "\x01"
 
 class Server: 
     def __init__(self, port): 
+        self.key = None
+        self.brokerPorts = ["5556"]
         self.port = port 
         self.shopping_lists = []
-        context = zmq.Context()
+        self.context = zmq.Context()
         logging.info("Connecting to broker...")
-        worker = context.socket(zmq.REQ)
-        worker.connect("tcp://localhost:" + self.port)
-        worker.send(json.dumps("port:" + str(self.port)).encode('utf-8'))
+        self.add_to_ring(self.key, self.port)
+        self.run()
         
+    def add_to_ring(self, key, port):
+        worker = self.context.socket(zmq.REQ)
+        worker.connect("tcp://localhost:" + self.brokerPorts[0])
+        worker.send(json.dumps("port:" + str(self.port)).encode('utf-8'))
+        self.key = worker.recv()
+        print("Server added to ring successfully!")
+        print("Server started on port " + str(self.port))
+        print("Key: " + str(self.key.decode('utf-8')))
 
     def set_port(self, port):
         self.port = port
@@ -39,10 +49,9 @@ class Server:
     
     def run(self):
 
-        context = zmq.Context()
-        worker = context.socket(zmq.REQ)
+        worker = self.context.socket(zmq.REQ)
 
-        worker.connect("tcp://localhost:" + self.port)
+        worker.connect("tcp://localhost:" + self.brokerPorts[0])
 
         worker.send_string(LRU_READY)
 
@@ -58,12 +67,11 @@ class Server:
 
             worker.send_multipart(msg)
             
-def main():
-    portBackend = "5556"
-
-    server = Server(portBackend)
-
-    server.run()
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) != 2:
+        print("Usage: python ./Server.py <port>")
+        sys.exit(1)
+
+    port = sys.argv[1]
+    Server(port)
