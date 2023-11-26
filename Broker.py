@@ -1,6 +1,7 @@
 import zmq
 import hashlib
 import json
+import time
 
 LRU_READY = "\x01"
 PORT = "port:"
@@ -63,7 +64,7 @@ class Broker:
                         dictionary["key"] = key
                         dictionary["ring"] = self.ring
 
-                        msg[2] = json.dumps(dictionary, sort_keys=True).encode('utf-8')
+                        msg[2] = json.dumps(dictionary).encode('utf-8')
 
                         backend.send_multipart(msg)
 
@@ -80,7 +81,7 @@ class Broker:
                         dictionary["key"] = key
                         dictionary["ring"] = self.ring
 
-                        msg[2] = json.dumps(dictionary, sort_keys=True).encode('utf-8')
+                        msg[2] = json.dumps(dictionary).encode('utf-8')
 
                         backend.send_multipart(msg)
 
@@ -108,6 +109,7 @@ class Broker:
     def add_node(self, node):
         key = self._hash(f"{node}")
         self.ring[key] = int(node)
+        self.ring["timestamp"] = time.time()
         self.sorted_keys.append(key)
         self.sorted_keys.sort()
         print(self.ring)

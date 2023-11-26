@@ -16,16 +16,16 @@ class Server:
         self.shopping_lists = []
         self.context = zmq.Context()
         logging.info("Connecting to broker...")
-        self.add_to_ring(self.key, self.port)
+        self.add_to_ring()
         self.run()
         
-    def add_to_ring(self, key, port):
+    def add_to_ring(self):
         worker = self.context.socket(zmq.REQ)
         worker.connect("tcp://localhost:" + self.brokerPorts[0])
         worker.send(json.dumps("port:" + str(self.port)).encode('utf-8'))
         received = json.loads(worker.recv().decode('utf-8'))
         self.key = received["key"]
-        self.servers = {int(key): value for key, value in received["ring"].items()}
+        self.servers = received["ring"] # if we want to access key remember it is a string
         print("Server added to ring successfully!")
         print("Server started on port " + str(self.port))
         print("Ring: " + str(self.servers))
