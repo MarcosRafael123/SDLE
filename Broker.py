@@ -56,7 +56,14 @@ class Broker:
 
                         message = str(key)
 
-                        msg[2] = message.encode('utf-8')
+                        print(message)
+
+                        dictionary = {}
+
+                        dictionary["key"] = key
+                        dictionary["ring"] = self.ring
+
+                        msg[2] = json.dumps(dictionary, sort_keys=True).encode('utf-8')
 
                         backend.send_multipart(msg)
 
@@ -66,7 +73,14 @@ class Broker:
 
                         message = str(key)
 
-                        msg[2] = message.encode('utf-8')
+                        print(message)
+
+                        dictionary = {}
+
+                        dictionary["key"] = key
+                        dictionary["ring"] = self.ring
+
+                        msg[2] = json.dumps(dictionary, sort_keys=True).encode('utf-8')
 
                         backend.send_multipart(msg)
 

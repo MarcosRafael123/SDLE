@@ -10,6 +10,7 @@ LRU_READY = "\x01"
 class Server: 
     def __init__(self, port): 
         self.key = None
+        self.servers = {}
         self.brokerPorts = ["5556"]
         self.port = port 
         self.shopping_lists = []
@@ -22,10 +23,13 @@ class Server:
         worker = self.context.socket(zmq.REQ)
         worker.connect("tcp://localhost:" + self.brokerPorts[0])
         worker.send(json.dumps("port:" + str(self.port)).encode('utf-8'))
-        self.key = worker.recv()
+        received = json.loads(worker.recv().decode('utf-8'))
+        self.key = received["key"]
+        self.servers = {int(key): value for key, value in received["ring"].items()}
         print("Server added to ring successfully!")
         print("Server started on port " + str(self.port))
-        print("Key: " + str(self.key.decode('utf-8')))
+        print("Ring: " + str(self.servers))
+        print("Key: " + str(self.key))
 
     def set_port(self, port):
         self.port = port
