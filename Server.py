@@ -4,6 +4,7 @@ import zmq
 import json
 import logging
 import sys
+import random
 
 LRU_READY = "\x01"
 
@@ -15,6 +16,7 @@ class Server:
         self.port = port 
         self.shopping_lists = []
         self.context = zmq.Context()
+        self.socket = None
         logging.info("Connecting to broker...")
         self.add_to_ring()
         self.run()
@@ -51,25 +53,62 @@ class Server:
     def send_shopping_list(self, shoppinglist):
         return
     
+    def send_servers_content(self):
+        if len(self.servers) <= 2: 
+            return None
+        
+        random_server = None
+
+        while True:
+            random_key = random.choice(list(self.servers.keys()))
+
+            if random_key != "timestamp" and int(random_key) != self.key:
+                random_server = self.servers[random_key]
+                break
+
+        server = self.context.socket(zmq.DEALER)
+        server.connect("tcp://localhost:" + str(random_server))
+        server.send(json.dumps(self.servers).encode('utf-8'))
+        
+
     def run(self):
 
         worker = self.context.socket(zmq.REQ)
-
         worker.connect("tcp://localhost:" + self.brokerPorts[0])
-
         worker.send_string(LRU_READY)
 
+        self.send_servers_content()
+
+        self.socket = self.context.socket(zmq.ROUTER)
+        self.socket.bind("tcp://*:" + self.port)
+
+        poller = zmq.Poller()
+        poller.register(self.socket, zmq.POLLIN)
+        poller.register(worker, zmq.POLLIN)
+
         while True:
-            msg = worker.recv_multipart()
+            events = dict(poller.poll(timeout=100))
 
-            if not msg:
-                break
+            self.send_servers_content()
 
-            print(self.unpack_message(msg))
+            if self.socket in events and events[self.socket] == zmq.POLLIN:
+                message = json.loads(self.socket.recv_multipart()[1].decode('utf-8'))
 
-            msg[2] = "message received".encode('utf-8')
+                if message["timestamp"] > self.servers["timestamp"]:
+                    self.servers = message
+                    print("Updated servers: " + str(self.servers))
 
-            worker.send_multipart(msg)
+            if worker in events and events[worker] == zmq.POLLIN:
+                msg = worker.recv_multipart()
+
+                if not msg:
+                    break
+
+                print(self.unpack_message(msg))
+
+                msg[2] = "message received".encode('utf-8')
+
+                worker.send_multipart(msg)
             
 
 if __name__ == "__main__":
