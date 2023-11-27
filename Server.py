@@ -87,7 +87,8 @@ class Server:
         poller.register(worker, zmq.POLLIN)
 
         while True:
-            events = dict(poller.poll(timeout=100))
+            #events = dict(poller.poll(timeout=100))
+            events = dict(poller.poll())
 
             self.send_servers_content()
 
