@@ -147,7 +147,7 @@ class Client:
         dictionary["key"] = shoppinglist.get_key()
         dictionary["timestamp"] = shoppinglist.get_timestamp()
 
-        return json.dumps(dictionary, sort_keys=True)
+        return "sl:" + json.dumps(dictionary, sort_keys=True)
 
     def unpack_message(self, msg):
         return json.loads(msg[2])

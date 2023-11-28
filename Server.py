@@ -7,6 +7,7 @@ import sys
 import random
 
 LRU_READY = "\x01"
+SHOPPINGLIST = "sl:"
 
 class Server: 
     def __init__(self, port): 
@@ -48,10 +49,43 @@ class Server:
         return json.dumps(dictionary, sort_keys=True)
     
     def unpack_message(self, msg):
-        return json.loads(msg[2])
+        return json.loads(msg[2].decode('utf-8')[3:])
     
     def send_shopping_list(self, shoppinglist):
         return
+    
+    def redirect_shopping_list(self, shoppinglist):
+        sl_key = shoppinglist["key"]
+
+        my_servers = self.servers.copy()
+        del my_servers["timestamp"]
+
+        if len(my_servers) == 1:
+            return 2
+
+        min_difference_lower = int('9' * 100)
+        min_difference_upper = int('9' * 100)
+
+        min_difference_lower_key = None
+        min_difference_upper_key = None
+
+        for key in my_servers:
+            if int(key) < sl_key:
+                difference = sl_key - int(key)
+                print(len(str(difference)))
+                if difference < min_difference_lower:
+                    min_difference_lower = difference
+                    min_difference_lower_key = key
+            else:
+                difference = int(key) - sl_key
+                if difference < min_difference_upper:
+                    min_difference_upper = difference
+                    min_difference_upper_key = key
+
+        print("Lower: " + str(min_difference_lower_key))   
+        print("Upper: " + str(min_difference_upper_key))
+
+        return 
     
     def send_servers_content(self):
         if len(self.servers) <= 2: 
@@ -105,11 +139,20 @@ class Server:
                 if not msg:
                     break
 
-                print(self.unpack_message(msg))
+                message = self.unpack_message(msg)
+                print(message)
+                
+                # check if shopping list belongs in this server
+                if(SHOPPINGLIST in msg[2].decode('utf-8')):
+                    self.redirect_shopping_list(message)
 
-                msg[2] = "message received".encode('utf-8')
+                    msg[2] = "message received".encode('utf-8')
+                    
+                    worker.send_multipart(msg)
 
-                worker.send_multipart(msg)
+                else: 
+                    msg[2] = "message received".encode('utf-8')
+                    worker.send_multipart(msg)                
             
 
 if __name__ == "__main__":
