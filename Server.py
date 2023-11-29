@@ -51,19 +51,23 @@ class Server:
     def unpack_message(self, msg):
         return json.loads(msg[2].decode('utf-8')[3:])
     
-    def send_shopping_list(self, shoppinglist):
-        return
+    def send_shopping_list(self, shoppinglist, server_key):
+        server = self.context.socket(zmq.DEALER)
+        server_to_send = self.servers[str(server_key)]
+        server.connect("tcp://localhost:" + str(server_to_send))
+        server.send(("sl:" + json.dumps(shoppinglist)).encode('utf-8'))
     
     def redirect_shopping_list(self, shoppinglist):
         sl_key = shoppinglist["key"]
 
         my_servers = self.servers.copy()
         del my_servers["timestamp"]
+        print("MY_SERVERS: ", my_servers)
 
-        if len(my_servers) == 1:
-            return 2
+        """ if len(my_servers) == 1:
+            return 2 """
 
-        min_difference_lower = int('9' * 100)
+        """ min_difference_lower = int('9' * 100)
         min_difference_upper = int('9' * 100)
 
         min_difference_lower_key = None
@@ -85,8 +89,41 @@ class Server:
         print("Lower: " + str(min_difference_lower_key))   
         print("Upper: " + str(min_difference_upper_key))
 
-        return 
-    
+        return  """
+
+        first_key = int('9' * 100)
+        server_to_send = None
+        for key, value in my_servers.items():
+            print("SL_KEY: ", sl_key)
+            if int(key) < first_key:
+                first_key = int(key)
+            
+            if int(key) < sl_key:
+                continue
+            else:
+                print("KEY : ", key)
+                if (key == self.key):
+                    self.shopping_lists.append(shoppinglist)
+                    print(self.shopping_lists)
+                    return
+                else:
+                    server_to_send = key
+                    self.send_shopping_list(shoppinglist, server_to_send)
+                    return
+                
+
+        print("KEY: ", first_key)
+        if (first_key == self.key):
+            self.shopping_lists.append(shoppinglist)
+            print(self.shopping_lists)
+            return
+        else:
+            server_to_send = first_key
+            self.send_shopping_list(shoppinglist, server_to_send)
+            return
+                
+
+
     def send_servers_content(self):
         if len(self.servers) <= 2: 
             return None
@@ -127,6 +164,10 @@ class Server:
             self.send_servers_content()
 
             if self.socket in events and events[self.socket] == zmq.POLLIN:
+                #message_received = self.socket.recv_multipart()
+
+                #print(message_received)
+
                 message = json.loads(self.socket.recv_multipart()[1].decode('utf-8'))
 
                 if message["timestamp"] > self.servers["timestamp"]:
