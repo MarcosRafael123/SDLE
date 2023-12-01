@@ -160,44 +160,21 @@ class Client:
         self.shopping_lists.append(shopping_list)
 
         logging.info("Connecting to server…")
-        client = self.context.socket(zmq.REQ)
+        client = self.context.socket(zmq.DEALER)
+        client.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
         client.connect("tcp://localhost:" + self.brokerPorts[0])
-        client.send(self.pack_message(shopping_list).encode('utf-8'))
+        client.send_multipart([b"sl", self.pack_message(shopping_list).encode('utf-8')])
 
-        retries_left = REQUEST_RETRIES
-
-        counter = 0
+        poller = zmq.Poller()
+        poller.register(client, zmq.POLLIN)
 
         while True:
-            print("CLIENT.POLL: ", client.poll(REQUEST_TIMEOUT))
-            print("ZMQ.POLLIN: ", zmq.POLLIN)
-            if (client.poll(REQUEST_TIMEOUT) & zmq.POLLIN) != 0:
+            events = dict(poller.poll())
+            
+            if client in events and events[client] == zmq.POLLIN:
                 reply = client.recv_multipart()
-
-                if reply[0].decode('utf-8') == "message received" : 
-                    print(reply)
-                    break
-                else: 
-                    print("error receiving")
-
-            retries_left -= 1
-            counter += 1
-         
-            # Socket is confused. Close and remove it.
-            client.setsockopt(zmq.LINGER, 0)
-            client.close()
-
-            if retries_left == 0:
-                logging.error("Server seems to be offline, abandoning")
-                sys.exit()
-
-            # Create new connection
-            logging.info("Reconnecting to server…")
-            client = self.context.socket(zmq.REQ)
-            client.connect("tcp://localhost:" + self.port)
-            logging.info("Resending (%s)", counter)
-            client.send(url.encode('utf-8'))
-
+                print(reply)
+            
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

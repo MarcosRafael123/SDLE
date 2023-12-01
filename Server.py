@@ -23,7 +23,8 @@ class Server:
         self.run()
         
     def add_to_ring(self):
-        worker = self.context.socket(zmq.REQ)
+        worker = self.context.socket(zmq.DEALER)
+        worker.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
         worker.connect("tcp://localhost:" + self.brokerPorts[0])
         worker.send(json.dumps("port:" + str(self.port)).encode('utf-8'))
         received = json.loads(worker.recv().decode('utf-8'))
@@ -49,80 +50,8 @@ class Server:
         return json.dumps(dictionary, sort_keys=True)
     
     def unpack_message(self, msg):
-        return json.loads(msg[2].decode('utf-8')[3:])
+        return json.loads(msg[1].decode('utf-8')[3:])
     
-    def send_shopping_list(self, shoppinglist, server_key):
-        server = self.context.socket(zmq.DEALER)
-        server_to_send = self.servers[str(server_key)]
-        server.connect("tcp://localhost:" + str(server_to_send))
-        server.send(("sl:" + json.dumps(shoppinglist)).encode('utf-8'))
-    
-    def redirect_shopping_list(self, shoppinglist):
-        sl_key = shoppinglist["key"]
-
-        my_servers = self.servers.copy()
-        del my_servers["timestamp"]
-        print("MY_SERVERS: ", my_servers)
-
-        """ if len(my_servers) == 1:
-            return 2 """
-
-        """ min_difference_lower = int('9' * 100)
-        min_difference_upper = int('9' * 100)
-
-        min_difference_lower_key = None
-        min_difference_upper_key = None
-
-        for key in my_servers:
-            if int(key) < sl_key:
-                difference = sl_key - int(key)
-                print(len(str(difference)))
-                if difference < min_difference_lower:
-                    min_difference_lower = difference
-                    min_difference_lower_key = key
-            else:
-                difference = int(key) - sl_key
-                if difference < min_difference_upper:
-                    min_difference_upper = difference
-                    min_difference_upper_key = key
-
-        print("Lower: " + str(min_difference_lower_key))   
-        print("Upper: " + str(min_difference_upper_key))
-
-        return  """
-
-        first_key = int('9' * 100)
-        server_to_send = None
-        for key, value in my_servers.items():
-            print("SL_KEY: ", sl_key)
-            if int(key) < first_key:
-                first_key = int(key)
-            
-            if int(key) < sl_key:
-                continue
-            else:
-                print("KEY : ", key)
-                if (key == self.key):
-                    self.shopping_lists.append(shoppinglist)
-                    print(self.shopping_lists)
-                    return
-                else:
-                    server_to_send = key
-                    self.send_shopping_list(shoppinglist, server_to_send)
-                    return
-                
-
-        print("KEY: ", first_key)
-        if (first_key == self.key):
-            self.shopping_lists.append(shoppinglist)
-            print(self.shopping_lists)
-            return
-        else:
-            server_to_send = first_key
-            self.send_shopping_list(shoppinglist, server_to_send)
-            return
-                
-
 
     def send_servers_content(self):
         if len(self.servers) <= 2: 
@@ -144,7 +73,8 @@ class Server:
 
     def run(self):
 
-        worker = self.context.socket(zmq.REQ)
+        worker = self.context.socket(zmq.DEALER)
+        worker.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
         worker.connect("tcp://localhost:" + self.brokerPorts[0])
         worker.send_string(LRU_READY)
 
@@ -164,10 +94,13 @@ class Server:
             self.send_servers_content()
 
             if self.socket in events and events[self.socket] == zmq.POLLIN:
-                #message_received = self.socket.recv_multipart()
+                message_received = self.socket.recv_multipart()
+                print(message_received)
+                print(message_received[1])
+                if(SHOPPINGLIST in message_received[1].decode('utf-8')):
+                    print(self.key)
 
-                #print(message_received)
-
+                
                 message = json.loads(self.socket.recv_multipart()[1].decode('utf-8'))
 
                 if message["timestamp"] > self.servers["timestamp"]:
@@ -177,22 +110,26 @@ class Server:
             if worker in events and events[worker] == zmq.POLLIN:
                 msg = worker.recv_multipart()
 
-                if not msg:
-                    break
+                print(msg)
 
                 message = self.unpack_message(msg)
                 print(message)
                 
                 # check if shopping list belongs in this server
-                if(SHOPPINGLIST in msg[2].decode('utf-8')):
-                    self.redirect_shopping_list(message)
-
-                    msg[2] = "message received".encode('utf-8')
-                    
+                if(SHOPPINGLIST in msg[1].decode('utf-8')):
+                    msg.insert(0, msg[2])
+                    msg.pop(3)
+                    msg.pop(2)
+                    msg[1] = "received shopping list".encode('utf-8')
+                    print(msg)
                     worker.send_multipart(msg)
 
                 else: 
-                    msg[2] = "message received".encode('utf-8')
+                    msg.insert(0, msg[2])
+                    msg.pop(3)
+                    msg.pop(2)
+                    msg[1] = "message received".encode('utf-8')
+                    print(msg)
                     worker.send_multipart(msg)                
             
 

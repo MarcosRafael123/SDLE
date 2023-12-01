@@ -10,89 +10,90 @@ class Broker:
     def __init__(self, portFrontend, portBackend, nodes=None, hash_func = hashlib.sha256): 
         self.portFrontend = portFrontend # for clients
         self.portBackend = portBackend # for servers
-        self.servers = {}
         self.hash_func = hash_func
         self.ring = {}
         self.sorted_keys = []
+
+    def redirect_shopping_list(self, shoppinglist):
+        sl_key = shoppinglist["key"]
+
+        my_servers = self.ring.copy()
+        del my_servers["timestamp"]
+        print("MY_SERVERS: ", my_servers)
+
+        first_key = int('9' * 100)
+        server_to_send = None
+        for key, value in my_servers.items():
+            print("KEY: ", key)
+            print("SL_KEY: ", sl_key)
+            if int(key) < first_key:
+                first_key = int(key)
+                first_key_value = int(value)
+            
+            if int(key) < sl_key:
+                print("ENTERED HERE")
+                continue
+            else:
+                server_to_send = int(value)
+                return server_to_send                
+
+        print("FIRST_KEY: ", first_key)
+        print("FIRST_KEY_VALUE: ", first_key_value)
+        server_to_send = int(first_key_value)
+        return server_to_send
 
     def run(self): 
 
         context = zmq.Context(1)
 
-        frontend = context.socket(zmq.ROUTER) # ROUTER
-        backend = context.socket(zmq.ROUTER) # ROUTER
-        frontend.bind("tcp://*:" + self.portFrontend) # For clients
-        backend.bind("tcp://*:" + self.portBackend)  # For workers
-
-        poll_workers = zmq.Poller()
-        poll_workers.register(backend, zmq.POLLIN)
+        frontend = context.socket(zmq.ROUTER)
+        backend = context.socket(zmq.ROUTER) 
+        frontend.bind("tcp://*:" + self.portFrontend)
+        backend.bind("tcp://*:" + self.portBackend) 
 
         poll_both = zmq.Poller()
         poll_both.register(frontend, zmq.POLLIN)
         poll_both.register(backend, zmq.POLLIN)
 
-        workers = []
-
         while True:
-            if workers:
-                socks = dict(poll_both.poll())
-            else:
-                socks = dict(poll_workers.poll())
+            sockets = dict(poll_both.poll())
 
-            # Handle worker activity on backend
-            if socks.get(backend) == zmq.POLLIN:
-                # Use worker address for LRU routing
+            if backend in sockets and sockets[backend] == zmq.POLLIN:
                 msg = backend.recv_multipart()
-                if not msg:
-                    break
-                address = msg[0]
-                workers.append(address)
 
-                # Everything after the second (delimiter) frame is reply
-                reply = msg[2:]
+                print(msg)
+                reply = msg[1]
                 print(reply)
-                if (len(reply) == 1):
-                    if (PORT in reply[0].decode('utf-8')):
-                        key = self.add_node(reply[0].decode('utf-8').split(':')[1].strip('"'))
+                
+                if (PORT in reply.decode('utf-8')):
+                    key = self.add_node(reply.decode('utf-8').split(':')[1].strip('"'))
 
-                        message = str(key)
+                    message = str(key)
 
-                        print(message)
+                    print(message)
 
-                        dictionary = {}
+                    dictionary = {}
 
-                        dictionary["key"] = key
-                        dictionary["ring"] = self.ring
+                    dictionary["key"] = key
+                    dictionary["ring"] = self.ring
 
-                        msg[2] = json.dumps(dictionary).encode('utf-8')
+                    msg[1] = json.dumps(dictionary).encode('utf-8')
 
-                        backend.send_multipart(msg)
+                    backend.send_multipart(msg)
 
-                else:
-                    if (PORT in reply[2].decode('utf-8')):
-                        key = self.add_node(reply[0].decode('utf-8').split(':')[1].strip('"'))
-
-                        message = str(key)
-
-                        print(message)
-
-                        dictionary = {}
-
-                        dictionary["key"] = key
-                        dictionary["ring"] = self.ring
-
-                        msg[2] = json.dumps(dictionary).encode('utf-8')
-
-                        backend.send_multipart(msg)
 
                 # Forward message to client if it's not a READY
-                if reply[0] != LRU_READY:
-                    frontend.send_multipart(reply)
+                elif reply != LRU_READY:
+                    frontend.send_multipart(msg)
 
-            if socks.get(frontend) == zmq.POLLIN:
-                #  Get client request, route to first available worker
+                else: 
+                    print("AAAAA")
+                    frontend.send_multipart([msg[1], msg[2]])
+
+            if frontend in sockets and sockets[frontend] == zmq.POLLIN:
                 msg = frontend.recv_multipart()
-                print(msg[2])
+
+                print(msg)
                 shoppingList = json.loads(msg[2].decode('utf-8')[3:])
                 print(shoppingList)
 
@@ -100,8 +101,16 @@ class Broker:
                     key = self._hash(shoppingList["url"])
                     shoppingList["key"] = key
                     msg[2] = ("sl:" + json.dumps(shoppingList)).encode('utf-8')
+                    print("SHOPPING LIST: ", shoppingList)
 
-                request = [workers.pop(0), ''.encode()] + msg
+                # verificar em que server se guarda
+
+                # workers.pop(0) -> replace por b'<port number>' ou hash key do server
+                server_port = str(self.redirect_shopping_list(shoppingList))
+                print(server_port)
+                server_port_encoded = server_port.encode('utf-8')
+                request = [server_port_encoded, msg[1], msg[2], msg[0]]
+
                 backend.send_multipart(request)
     
     def _hash(self, key):
