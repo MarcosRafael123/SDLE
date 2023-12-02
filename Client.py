@@ -174,6 +174,7 @@ class Client:
             if client in events and events[client] == zmq.POLLIN:
                 reply = client.recv_multipart()
                 print(reply)
+                break
             
 
 if __name__ == "__main__":
