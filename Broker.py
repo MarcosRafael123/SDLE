@@ -66,6 +66,7 @@ class Broker:
                 print(reply)
                 
                 if (PORT in reply.decode('utf-8')):
+                    print("CCCCC")
                     key = self.add_node(reply.decode('utf-8').split(':')[1].strip('"'))
 
                     message = str(key)
@@ -84,11 +85,11 @@ class Broker:
 
                 # Forward message to client if it's not a READY
                 elif reply != LRU_READY:
-                    frontend.send_multipart(msg)
-
-                else: 
-                    print("AAAAA")
-                    frontend.send_multipart([msg[1], msg[2]])
+                    if(len(msg) == 3): 
+                        frontend.send_multipart([msg[1], msg[2]])
+                    else:
+                        frontend.send_multipart(msg)
+                        
 
             if frontend in sockets and sockets[frontend] == zmq.POLLIN:
                 msg = frontend.recv_multipart()
