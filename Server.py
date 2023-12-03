@@ -89,7 +89,7 @@ class Server:
 
         while True:
             #events = dict(poller.poll(timeout=100))
-            events = dict(poller.poll())
+            events = dict(poller.poll(timeout=1000))
 
             self.send_servers_content()
 
@@ -100,7 +100,7 @@ class Server:
                 if(SHOPPINGLIST in message_received[1].decode('utf-8')):
                     print(self.key)
 
-                
+                print("Received message: " + str(message_received))
                 message = json.loads(self.socket.recv_multipart()[1].decode('utf-8'))
 
                 if message["timestamp"] > self.servers["timestamp"]:
