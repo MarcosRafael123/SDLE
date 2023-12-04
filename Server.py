@@ -5,9 +5,11 @@ import json
 import logging
 import sys
 import random
+import re
 
 LRU_READY = "\x01"
 SHOPPINGLIST = "sl:"
+REPLICATION_FACTOR = 2
 
 class Server: 
     def __init__(self, port): 
@@ -16,6 +18,7 @@ class Server:
         self.brokerPorts = ["5556"]
         self.port = port 
         self.shopping_lists = []
+        self.replicas = {}
         self.context = zmq.Context()
         self.socket = None
         logging.info("Connecting to broker...")
@@ -52,8 +55,7 @@ class Server:
     def unpack_message(self, msg):
         return json.loads(msg[1].decode('utf-8')[3:])
     
-
-    def send_servers_content(self):
+    def send_servers_ring(self):
         if len(self.servers) <= 2: 
             return None
         
@@ -68,8 +70,51 @@ class Server:
 
         server = self.context.socket(zmq.DEALER)
         server.connect("tcp://localhost:" + str(random_server))
-        server.send(json.dumps(self.servers).encode('utf-8'))
+        server.send(("ring:" + json.dumps(self.servers)).encode('utf-8'))
         
+    def get_successors(self, source_key):
+        servers_copy = self.servers.copy()
+        del servers_copy['timestamp']
+        transformed_dict = {int(key): value for key, value in servers_copy.items()}
+        transformed_dict = dict(sorted(transformed_dict.items()))
+        #print("TRANSFORMED_DICTIONARY_SORTED: ", transformed_dict)
+
+        server_ports = list(transformed_dict.keys())
+
+        print("SERVER_PORTS: ", server_ports)
+
+        try:
+            source_index = server_ports.index(source_key)
+        except ValueError:
+            return []
+
+        num_servers = len(server_ports)
+        if num_servers <= 1:
+            return []
+
+        replica_servers = []
+        for i in range(1, min(REPLICATION_FACTOR + 1, num_servers)):
+            index = (source_index + i) % num_servers
+            next_server = server_ports[index]
+            if next_server != source_key:
+                replica_servers.append(next_server)
+
+        return replica_servers
+                
+
+    def send_replicas(self, shoppinglist):
+        successors = self.get_successors(self.key)
+
+        print("Successors: ", successors)
+
+        for successor in successors:
+            server = self.context.socket(zmq.DEALER)
+            server.connect("tcp://localhost:" + str(self.servers[str(successor)]))
+            print("Sending to server: ", self.servers[str(successor)])
+            server.send(("sl:" + json.dumps(shoppinglist) + ":" + str(self.key)).encode('utf-8'))
+
+        return 
+
 
     def run(self):
 
@@ -77,8 +122,6 @@ class Server:
         worker.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
         worker.connect("tcp://localhost:" + self.brokerPorts[0])
         worker.send_string(LRU_READY)
-
-        self.send_servers_content()
 
         self.socket = self.context.socket(zmq.ROUTER)
         self.socket.bind("tcp://*:" + self.port)
@@ -88,24 +131,42 @@ class Server:
         poller.register(worker, zmq.POLLIN)
 
         while True:
-            #events = dict(poller.poll(timeout=100))
-            events = dict(poller.poll(timeout=1000))
+            start_time = time.time()
 
-            self.send_servers_content()
+            events = dict(poller.poll(timeout=1000))
 
             if self.socket in events and events[self.socket] == zmq.POLLIN:
                 message_received = self.socket.recv_multipart()
-                print(message_received)
-                print(message_received[1])
+        
                 if(SHOPPINGLIST in message_received[1].decode('utf-8')):
-                    print(self.key)
+                    print("Received shopping list")
+                    message = message_received[1].decode('utf-8')[3:]
+                    
+                    last_colon_index = message.rfind(":")
 
-                print("Received message: " + str(message_received))
-                message = json.loads(self.socket.recv_multipart()[1].decode('utf-8'))
+                    json_part = message[:last_colon_index]
+                    key_part = message[last_colon_index + 1:]
 
-                if message["timestamp"] > self.servers["timestamp"]:
+                    if key_part.startswith(":"):
+                        key_part = key_part[1:]
+
+                    shoppinglist = json.loads(json_part)
+
+                    sls = self.replicas[key_part] if key_part in self.replicas else []
+                    sls.append(shoppinglist)
+                    self.replicas[key_part] = sls
+
+                    print("Replicas: ", self.replicas)
+
+                if "ring:" in message_received[1].decode('utf-8'):
+                    #print("Received ring")
+
+                    message = json.loads(message_received[1].decode('utf-8')[5:])
+
                     self.servers = message
-                    print("Updated servers: " + str(self.servers))
+
+                    if message["timestamp"] > self.servers["timestamp"]:
+                        self.servers = message
 
             if worker in events and events[worker] == zmq.POLLIN:
                 msg = worker.recv_multipart()
@@ -115,7 +176,6 @@ class Server:
                 message = self.unpack_message(msg)
                 print(message)
                 
-                # check if shopping list belongs in this server
                 if(SHOPPINGLIST in msg[1].decode('utf-8')):
                     msg.insert(0, msg[2])
                     msg.pop(3)
@@ -123,6 +183,8 @@ class Server:
                     msg[1] = "received shopping list".encode('utf-8')
                     print(msg)
                     worker.send_multipart(msg)
+                    self.shopping_lists.append(message)
+                    self.send_replicas(message)
 
                 else: 
                     msg.insert(0, msg[2])
@@ -130,7 +192,14 @@ class Server:
                     msg.pop(2)
                     msg[1] = "message received".encode('utf-8')
                     print(msg)
-                    worker.send_multipart(msg)                
+                    worker.send_multipart(msg)      
+            
+            elapsed_time = time.time() - start_time
+
+            if elapsed_time < 1:
+                time.sleep(1 - elapsed_time)  # Sleep for the remaining seconds
+
+            self.send_servers_ring()
             
 
 if __name__ == "__main__":
