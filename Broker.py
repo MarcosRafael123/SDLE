@@ -19,28 +19,18 @@ class Broker:
 
         my_servers = self.ring.copy()
         del my_servers["timestamp"]
+        my_servers = dict(sorted(my_servers.items(), reverse=True))
         print("MY_SERVERS: ", my_servers)
 
-        first_key = int('9' * 100)
-        server_to_send = None
         for key, value in my_servers.items():
             print("KEY: ", key)
             print("SL_KEY: ", sl_key)
-            if int(key) < first_key:
-                first_key = int(key)
-                first_key_value = int(value)
             
-            if int(key) < sl_key:
-                print("ENTERED HERE")
-                continue
-            else:
-                server_to_send = int(value)
-                return server_to_send                
+            if int(key) <= sl_key:
+                server_to_send = value
+                return server_to_send
 
-        print("FIRST_KEY: ", first_key)
-        print("FIRST_KEY_VALUE: ", first_key_value)
-        server_to_send = int(first_key_value)
-        return server_to_send
+        return my_servers[max(my_servers, key=my_servers.get)]
 
     def run(self): 
 
