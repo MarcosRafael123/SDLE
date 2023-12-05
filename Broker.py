@@ -5,6 +5,7 @@ import time
 
 LRU_READY = "\x01"
 PORT = "port:"
+RING = "ring:"
 
 class Broker: 
     def __init__(self, portFrontend, portBackend, nodes=None, hash_func = hashlib.sha256): 
@@ -72,6 +73,10 @@ class Broker:
 
                     backend.send_multipart(msg)
 
+                if RING in reply.decode('utf-8'):
+                    reply_message = "received ring".encode('utf-8')
+
+                    backend.send_multipart([msg[0], reply_message])
 
                 # Forward message to client if it's not a READY
                 elif reply != LRU_READY:
