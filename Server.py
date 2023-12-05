@@ -107,13 +107,13 @@ class Server:
         return replica_servers
                 
 
-    def send_replicas(self, shoppinglist):
+    def send_replicas(self):
         successors = self.get_successors(self.key, REPLICATION_FACTOR)
 
         for successor in successors:
             server = self.context.socket(zmq.DEALER)
             server.connect("tcp://localhost:" + str(self.servers[str(successor)]))
-            server.send((REP + json.dumps(shoppinglist) + ":" + str(self.key)).encode('utf-8'))
+            server.send((REP + json.dumps(self.shopping_lists) + ":" + str(self.key)).encode('utf-8'))
 
         return 
     
@@ -138,21 +138,12 @@ class Server:
     def transfer_shopping_lists(self):
         lost_shopping_lists, server_to_send = self.find_lost_shopping_lists_for_server()
 
-        print("SERVER_TO_SEND: ", server_to_send)
-        print("LOST SHOPPING LISTS: ", lost_shopping_lists)
+        #print("SERVER_TO_SEND: ", server_to_send)
+        #print("LOST SHOPPING LISTS: ", lost_shopping_lists)
 
         server_to_send = self.servers[str(server_to_send)]
 
         successors = self.get_successors(self.key, 3)
-
-        if len(lost_shopping_lists) == 0:
-            return
-        if len(successors) == 1:
-            successors = []
-        if len(successors) == 2:
-            successors = [successors[1]]
-        if len(successors) == 3:
-            successors = [successors[1], successors[2]]
 
         for shopping_list in lost_shopping_lists:
             sl = json.dumps(shopping_list)
@@ -160,21 +151,15 @@ class Server:
             server.connect("tcp://localhost:" + str(server_to_send))
             #print("Sending to server: ", str(server_to_send))
             server.send(("sl:" + sl).encode('utf-8'))
-            
-            if len(successors) > 1:
-                server = self.context.socket(zmq.DEALER)
-                server.connect("tcp://localhost:" + str(self.servers[str(successors[0])]))
-                #print("Sending to server: ", self.servers[str(successors[0])])
-                server.send(("sl_nrep:" + sl + ":" + str(self.key)).encode('utf-8'))
-
-                if len(successors) > 2:
-                    server = self.context.socket(zmq.DEALER)
-                    server.connect("tcp://localhost:" + str(self.servers[str(successors[1])]))
-                    #print("Sending to server: ", self.servers[str(successors[1])])
-                    server.send(("rm_rep:" + str(self.key)).encode('utf-8'))
-
             self.shopping_lists.remove(shopping_list)
 
+        if len(successors) > 2:
+            server = self.context.socket(zmq.DEALER)
+            server.connect("tcp://localhost:" + str(self.servers[str(successors[2])]))
+            #print("Sending to server: ", self.servers[str(successors[1])])
+            server.send(("rm_rep:" + str(self.key)).encode('utf-8'))
+
+            
     def run(self):
 
         worker = self.context.socket(zmq.DEALER)
@@ -203,13 +188,13 @@ class Server:
     
                     self.shopping_lists.append(json.loads(message))
 
-                    print("Shopping lists: ", self.shopping_lists)
-                    self.send_replicas(json.loads(message))
+                    #print("Shopping lists: ", self.shopping_lists)
+                    self.send_replicas()
 
                 if REP in message_received[1].decode('utf-8'):
                     message = message_received[1].decode('utf-8')[7:]
 
-                    #print("MESSAGE: ", message)
+                    print("MESSAGE: ", message)
                     
                     last_colon_index = message.rfind(":")
 
@@ -219,49 +204,24 @@ class Server:
                     if key_part.startswith(":"):
                         key_part = key_part[1:]
 
-                    #print("KEY_PART: ", key_part)
+                    print("KEY_PART: ", key_part)
                     
-                    shoppinglist = json.loads(json_part)
+                    replica = json.loads(json_part)
 
-                    sls = self.replicas[key_part] if key_part in self.replicas else []
-                    sls.append(shoppinglist)
-                    self.replicas[key_part] = sls
+                    self.replicas[key_part] = replica
 
-                    #print("Replicas: ", self.replicas)
-
-                if NREP in message_received[1].decode('utf-8'):
-                    message = message_received[1].decode('utf-8')[8:]
-
-                    #print("MESSAGE: ", message)
-                    
-                    last_colon_index = message.rfind(":")
-
-                    json_part = message[:last_colon_index]
-                    key_part = message[last_colon_index + 1:]
-
-                    if key_part.startswith(":"):
-                        key_part = key_part[1:]
-
-                    #print("KEY_PART: ", key_part)
-                    
-                    shoppinglist = json.loads(json_part)
-
-                    sls = self.replicas[key_part] if key_part in self.replicas else []
-                    sls.remove(shoppinglist)
-                    self.replicas[key_part] = sls
-
-                    print("Replicas after remotion of sl: ", self.replicas)
+                    print("Replicas: ", self.replicas.keys())
 
                 if RMREP in message_received[1].decode('utf-8'):
                     message = message_received[1].decode('utf-8')[7:]
 
-                    del self.replicas[message]
+                    print("MESSAGE: ", message)
 
-                    """ sls = self.replicas[key_part] if key_part in self.replicas else []
-                    sls.remove(shoppinglist)
-                    self.replicas[key_part] = sls """
-
-                    print("Replicas after deletion: ", self.replicas)
+                    if message in self.replicas.keys():
+                        del self.replicas[message]
+                        print("Replicas after deletion: ", self.replicas.keys())
+ 
+                    print("YAU")
 
                 if RING in message_received[1].decode('utf-8'):
                     #print("Received ring")
@@ -274,6 +234,7 @@ class Server:
                     if message["timestamp"] > self.servers["timestamp"]:
                         self.servers = message
                         self.transfer_shopping_lists()
+                        self.send_replicas()
 
             if worker in events and events[worker] == zmq.POLLIN:
                 msg = worker.recv_multipart()
@@ -291,7 +252,7 @@ class Server:
                     print(msg)
                     worker.send_multipart(msg)
                     self.shopping_lists.append(message)
-                    self.send_replicas(message)
+                    self.send_replicas()
 
                 else: 
                     msg.insert(0, msg[2])
