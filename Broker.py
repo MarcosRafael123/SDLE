@@ -29,9 +29,10 @@ class Broker:
             
             if int(key) <= sl_key:
                 server_to_send = value
-                return server_to_send
+                return key, server_to_send
 
-        return my_servers[max(my_servers, key=my_servers.get)]
+        max_key = max(my_servers, key=my_servers.get)
+        return max_key, my_servers[max_key]
 
     def run(self): 
 
@@ -52,6 +53,7 @@ class Broker:
             if backend in sockets and sockets[backend] == zmq.POLLIN:
                 msg = backend.recv_multipart()
 
+                print("BACKEND MESSAGE RECEIVED:")
                 print(msg)
                 reply = msg[1]
                 print(reply)
@@ -78,12 +80,12 @@ class Broker:
 
                     backend.send_multipart([msg[0], reply_message])
 
-                # Forward message to client if it's not a READY
+                """ # Forward message to client if it's not a READY
                 elif reply != LRU_READY:
                     if(len(msg) == 3): 
                         frontend.send_multipart([msg[1], msg[2]])
                     else:
-                        frontend.send_multipart(msg)
+                        frontend.send_multipart(msg) """
                         
 
             if frontend in sockets and sockets[frontend] == zmq.POLLIN:
@@ -102,15 +104,76 @@ class Broker:
                 # verificar em que server se guarda
 
                 # workers.pop(0) -> replace por b'<port number>' ou hash key do server
-                server_port = str(self.redirect_shopping_list(shoppingList))
+                server_key, server_port = self.redirect_shopping_list(shoppingList)
+                server_port = str(server_port)
                 print(server_port)
-                server_port_encoded = server_port.encode('utf-8')
-                request = [server_port_encoded, msg[1], msg[2], msg[0]]
+                """ server_port_encoded = server_port.encode('utf-8')
+                request = [server_port_encoded, msg[1], msg[2], msg[0]] """
 
-                backend.send_multipart(request)
+                next_servers = self.clockwise_order(int(server_key))
+                print("NEXT SERVERS: ", next_servers)
+
+                # Introduce timeout mechanism
+                start_time = time.time()
+                timeout = 2  # Set your desired timeout in seconds
+
+                success = False
+
+                for server_hash in next_servers:
+                    server_port_encoded = str(self.ring[server_hash]).encode('utf-8')
+                    request = [server_port_encoded, msg[1], msg[2], msg[0]]
+
+                    while True:
+                        backend.send_multipart(request)
+                        sockets = dict(poll_both.poll(timeout=100))
+
+                        if backend in sockets and sockets[backend] == zmq.POLLIN:
+                            response_msg = backend.recv_multipart()
+                            # Process the response_msg
+                            print("Response received:", response_msg)
+
+                            if len(response_msg) == 3:
+                                frontend.send_multipart([response_msg[1], response_msg[2]])
+                            else:
+                                frontend.send_multipart(response_msg)
+
+                            success = True
+                            break
+
+                        elapsed_time = time.time() - start_time
+
+                        if elapsed_time >= timeout:
+                            print("Timeout reached. No response received.")
+                            break
+
+                    if success:
+                        break 
+
+                if not success:
+                    print("No servers available. Message lost.")
+                    print(msg)
+                    msg[2] = "message lost".encode('utf-8')
+                    frontend.send_multipart(msg)
     
     def _hash(self, key):
         return int(self.hash_func(str(key).encode()).hexdigest(), 16)
+    
+    def clockwise_order(self, key):
+        hash_ring = self.ring.copy()
+        del hash_ring["timestamp"]
+
+        sorted_keys = sorted(hash_ring.keys())
+        try:
+            start_index = sorted_keys.index(key)
+        except ValueError:
+            # Handle the case when the key is not in the ring
+            return []
+
+        # Rotate the sorted keys to start from the found position
+        rotated_keys = sorted_keys[start_index:] + sorted_keys[:start_index]
+
+        # Return the rotated keys as a list
+        return rotated_keys
 
     def add_node(self, node):
         key = self._hash(f"{node}")

@@ -20,7 +20,6 @@ REPLICATION_FACTOR = 2
 class Server: 
     def __init__(self, port): 
         self.key = None
-        self.lock = threading.Lock()
         self.servers = {}
         self.brokerPorts = ["5556"]
         self.port = port 
@@ -30,8 +29,7 @@ class Server:
         self.socket = None
         logging.info("Connecting to broker...")
         self.add_to_ring()
-        threading.Thread(target=self.send_servers_ring).start()
-        threading.Thread(target=self.run).start()
+        self.run()
         
     def add_to_ring(self):
         worker = self.context.socket(zmq.DEALER)
@@ -64,56 +62,36 @@ class Server:
         return json.loads(msg[1].decode('utf-8')[3:])
     
     def send_servers_ring(self):
-        with self.lock:
-            if len(self.servers) <= 2: 
-                return None
-            
-            random_server = None
-            random_key = None
+        if len(self.servers) <= 2: 
+            return None
+        
+        random_server = None
+        random_key = None
 
-            while True:
-                random_key = random.choice(list(self.servers.keys()))# + self.brokerPorts)
+        while True:
+            random_key = random.choice(list(self.servers.keys()))# + self.brokerPorts)
 
-                if random_key != "timestamp" and int(random_key) != self.key:
-                    """ if random_key in self.brokerPorts:
-                        random_server = self.brokerPorts[0]
-                    else:
-                        random_server = self.servers[random_key] """
-                    random_server = self.servers[random_key]
-                    
-                    break
+            if random_key != "timestamp" and int(random_key) != self.key:
+                """ if random_key in self.brokerPorts:
+                    random_server = self.brokerPorts[0]
+                else:
+                    random_server = self.servers[random_key] """
+                random_server = self.servers[random_key]
+                
+                break
 
-            server = self.context.socket(zmq.DEALER)
-            server.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
-            server.connect("tcp://localhost:" + str(random_server))
-            server.send(("ring:" + json.dumps(self.servers)).encode('utf-8'))
-
-            poller = zmq.Poller()
-            poller.register(server, zmq.POLLIN)
-
-            socks = dict(poller.poll(timeout=5000))  # 1000 milliseconds (1 second) timeout
-
-            if server in socks and socks[server] == zmq.POLLIN:
-                # Received a reply within the timeout
-                reply = server.recv()
-                #print("Received reply:", reply.decode('utf-8'))
-                # Process the reply if needed
-            else:
-                del self.servers[random_key]
-                self.servers["timestamp"] = time.time()
-
-            server.close()
+        server = self.context.socket(zmq.DEALER)
+        server.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
+        server.connect("tcp://localhost:" + str(random_server))
+        server.send(("ring:" + json.dumps(self.servers)).encode('utf-8'))
         
     def get_successors(self, source_key, num_succ):
         servers_copy = self.servers.copy()
         del servers_copy['timestamp']
         transformed_dict = {int(key): value for key, value in servers_copy.items()}
         transformed_dict = dict(sorted(transformed_dict.items()))
-        #print("TRANSFORMED_DICTIONARY_SORTED: ", transformed_dict)
 
         server_ports = list(transformed_dict.keys())
-
-        #print("SERVER_PORTS: ", server_ports)
 
         try:
             source_index = server_ports.index(source_key)
@@ -140,6 +118,7 @@ class Server:
 
         for successor in successors:
             server = self.context.socket(zmq.DEALER)
+            server.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
             server.connect("tcp://localhost:" + str(self.servers[str(successor)]))
             server.send((REP + json.dumps(self.shopping_lists) + ":" + str(self.key)).encode('utf-8'))
 
@@ -252,19 +231,16 @@ class Server:
                     print("YAU")
 
                 if RING in message_received[1].decode('utf-8'):
-                    with self.lock:
-                        #print("Received ring")
+                    message_reply = "received ring".encode('utf-8')
 
-                        message_reply = "received ring".encode('utf-8')
+                    self.socket.send_multipart([message_received[0], message_reply])
 
-                        self.socket.send_multipart([message_received[0], message_reply])
+                    message = json.loads(message_received[1].decode('utf-8')[5:])
 
-                        message = json.loads(message_received[1].decode('utf-8')[5:])
-
-                        if message["timestamp"] > self.servers["timestamp"]:
-                            self.servers = message
-                            self.transfer_shopping_lists()
-                            self.send_replicas()
+                    if message["timestamp"] > self.servers["timestamp"]:
+                        self.servers = message
+                        self.transfer_shopping_lists()
+                        self.send_replicas()
 
             if worker in events and events[worker] == zmq.POLLIN:
                 msg = worker.recv_multipart()
