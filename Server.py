@@ -11,11 +11,13 @@ import random
 
 LRU_READY = "\x01"
 SHOPPINGLIST = "sl:"
+SHOPPINGLISTS = "sls:"
 RING = "ring:"
 REP = "sl_rep:"
 NREP = "sl_nrep:"
 RMREP = "rm_rep:"
 REPLICATION_FACTOR = 2
+HINTED_HANDOFF_TIMEOUT = 5
 
 class Server: 
     def __init__(self, port): 
@@ -25,6 +27,7 @@ class Server:
         self.port = port 
         self.shopping_lists = []
         self.replicas = {}
+        self.hinted_handoff = {}
         self.context = zmq.Context()
         self.socket = None
         logging.info("Connecting to broker...")
@@ -61,6 +64,28 @@ class Server:
     def unpack_message(self, msg):
         return json.loads(msg[1].decode('utf-8')[3:])
     
+    def add_to_shopping_lists(self, shopping_list):
+        key_exists = any(item['key'] == shopping_list['key'] for item in self.shopping_lists)
+
+        if not key_exists:
+            self.shopping_lists.append(shopping_list)
+        else:
+            print(f"The key {shopping_list} already exists in the list.")
+    
+    def clockwise_order(self, key):
+        hash_ring = self.servers.copy()
+        del hash_ring["timestamp"]
+
+        sorted_keys = sorted(hash_ring.keys())
+        try:
+            start_index = sorted_keys.index(key)
+        except ValueError:
+            return []
+
+        rotated_keys = sorted_keys[start_index:] + sorted_keys[:start_index]
+
+        return rotated_keys
+
     def send_servers_ring(self):
         if len(self.servers) <= 2: 
             return None
@@ -69,7 +94,7 @@ class Server:
         random_key = None
 
         while True:
-            random_key = random.choice(list(self.servers.keys()))# + self.brokerPorts)
+            random_key = random.choice(list(self.servers.keys()))
 
             if random_key != "timestamp" and int(random_key) != self.key:
                 """ if random_key in self.brokerPorts:
@@ -166,6 +191,52 @@ class Server:
             #print("Sending to server: ", self.servers[str(successors[1])])
             server.send(("rm_rep:" + str(self.key)).encode('utf-8'))
 
+    def process_hinted_handoff(self):
+        current_time = time.time()
+
+        # Iterate over hinted_handoff and process entries
+        for key, entry in list(self.hinted_handoff.items()):
+            elapsed_time = current_time - entry['timestamp']
+
+            if elapsed_time >= HINTED_HANDOFF_TIMEOUT:
+                # Handle the case where the timeout has been reached
+                print(f"Timeout reached for key {key}. Entry: {entry}")
+
+                # remove from ring
+
+                # send to broker to be updated
+
+                # Remove the expired timestamp_entry
+                del self.hinted_handoff[key]
+            else:
+                # Your logic to try sending the shopping list to the correct server
+                # (e.g., using the information in 'timestamp_entry')
+                print(f"Attempting to send shopping lists for key {key}")
+
+                message_to_send = ("sls:" + json.dumps(entry['sls'])).encode('utf-8')
+
+                # Send the message to the server
+                self.socket_to_server = self.context.socket(zmq.DEALER)
+                self.socket_to_server.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
+                self.socket_to_server.connect("tcp://localhost:" + str(self.servers[str(key)]))
+                self.socket_to_server.send(message_to_send)
+
+                # Wait for a response with a timeout
+                poller = zmq.Poller()
+                poller.register(self.socket_to_server, zmq.POLLIN)
+                timeout = 1000  # Set your desired timeout in milliseconds
+
+                if self.socket_to_server in dict(poller.poll(timeout=timeout)):
+                    # Received a response within the timeout
+                    response = self.socket_to_server.recv()
+                    print(f"Received response from server: {response}")
+                    del self.hinted_handoff[key]
+                else:
+                    # Handle the case where no response is received within the timeout
+                    print("No response received within the timeout.")
+
+                # Cleanup and disconnect
+                self.socket_to_server.disconnect("tcp://localhost:" + str(self.servers[str(key)]))
             
     def run(self):
 
@@ -182,7 +253,6 @@ class Server:
         poller.register(worker, zmq.POLLIN)
 
         while True:
-            #start_time = time.time()
 
             events = dict(poller.poll(timeout=1000))
 
@@ -193,12 +263,34 @@ class Server:
                     #print("Received shopping list")
                     message = message_received[1].decode('utf-8')[3:]
     
-                    self.shopping_lists.append(json.loads(message))
+                    #self.shopping_lists.append(json.loads(message))
+                    self.add_to_shopping_lists(json.loads(message))
 
                     #print("Shopping lists: ", self.shopping_lists)
                     self.send_replicas()
 
-                if REP in message_received[1].decode('utf-8'):
+                elif SHOPPINGLISTS in message_received[1].decode('utf-8'):
+                    message = message_received[1].decode('utf-8')[4:]
+
+                    print("RECEIVEDDDDD YESSSSSSSSSSSS")
+                    print(message)
+
+                    reply_message = "received shopping lists".encode('utf-8')
+
+                    self.socket.send_multipart([message_received[0], reply_message])
+
+                    shopping_lists = json.loads(message)
+
+                    for shopping_list in shopping_lists:
+                        print(shopping_list)
+                        #self.shopping_lists.append(shopping_list)
+                        self.add_to_shopping_lists(shopping_list)
+
+                    print("Shopping lists: ", self.shopping_lists)
+
+                    self.send_replicas()
+
+                elif REP in message_received[1].decode('utf-8'):
                     message = message_received[1].decode('utf-8')[7:]
 
                     print("MESSAGE: ", message)
@@ -219,7 +311,7 @@ class Server:
 
                     print("Replicas: ", self.replicas.keys())
 
-                if RMREP in message_received[1].decode('utf-8'):
+                elif RMREP in message_received[1].decode('utf-8'):
                     message = message_received[1].decode('utf-8')[7:]
 
                     print("MESSAGE: ", message)
@@ -230,7 +322,7 @@ class Server:
  
                     print("YAU")
 
-                if RING in message_received[1].decode('utf-8'):
+                elif RING in message_received[1].decode('utf-8'):
                     message_reply = "received ring".encode('utf-8')
 
                     self.socket.send_multipart([message_received[0], message_reply])
@@ -246,19 +338,38 @@ class Server:
                 msg = worker.recv_multipart()
 
                 print(msg)
-
-                message = self.unpack_message(msg)
-                print(message)
                 
-                if(SHOPPINGLIST in msg[1].decode('utf-8')):
-                    msg.insert(0, msg[2])
-                    msg.pop(3)
-                    msg.pop(2)
-                    msg[1] = "received shopping list".encode('utf-8')
+                if(SHOPPINGLIST in msg[0].decode('utf-8')):
+                    response = "received shopping list".encode('utf-8')
                     print(msg)
-                    worker.send_multipart(msg)
-                    self.shopping_lists.append(message)
-                    self.send_replicas()
+                    worker.send_multipart([msg[1], response])
+
+                    message = msg[0].decode('utf-8')[3:]
+
+                    last_colon_index = message.rfind(":")
+
+                    json_part = message[:last_colon_index]
+                    key_part = message[last_colon_index + 1:]
+
+                    if key_part.startswith(":"):
+                        key_part = key_part[1:]
+
+                    print("KEY_PART: ", key_part)
+                    print("JSON_PART: ", json_part)
+
+                    if key_part == str(self.key):
+                        print("BElongs here")
+                        self.add_to_shopping_lists(json.loads(json_part))
+                        self.send_replicas()
+                    else: 
+                        print("Goes to hinted handoff")
+
+                        if not (key_part in self.hinted_handoff):
+                            self.hinted_handoff[key_part] = {'timestamp': time.time(), 'sls': [json.loads(json_part)]}
+                            
+                        else: 
+                            self.hinted_handoff[key_part]['sls'] = self.hinted_handoff[key_part]['sls'].append(json.loads(json_part))
+                    
 
                 else: 
                     msg.insert(0, msg[2])
@@ -267,14 +378,14 @@ class Server:
                     msg[1] = "message received".encode('utf-8')
                     print(msg)
                     worker.send_multipart(msg)      
-            
-            """ elapsed_time = time.time() - start_time
-
-            if elapsed_time < 1:
-                time.sleep(1 - elapsed_time) """
+    
 
             self.send_servers_ring()
-            print("Ring: ", self.servers.keys())
+            self.process_hinted_handoff()
+
+            #print("Ring: ", self.servers.keys())
+            #print("Replicas: ", self.replicas)
+            #print("Hinted handoff: ", self.hinted_handoff)
             
 
 if __name__ == "__main__":

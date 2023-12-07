@@ -76,6 +76,8 @@ class Broker:
                     backend.send_multipart(msg)
 
                 if RING in reply.decode('utf-8'):
+                    print("Received ring")
+
                     reply_message = "received ring".encode('utf-8')
 
                     backend.send_multipart([msg[0], reply_message])
@@ -98,30 +100,26 @@ class Broker:
                 if (shoppingList["key"] == None):
                     key = self._hash(shoppingList["url"])
                     shoppingList["key"] = key
-                    msg[2] = ("sl:" + json.dumps(shoppingList)).encode('utf-8')
+                    #msg[2] = ("sl:" + json.dumps(shoppingList) + ":").encode('utf-8')
                     print("SHOPPING LIST: ", shoppingList)
 
-                # verificar em que server se guarda
-
-                # workers.pop(0) -> replace por b'<port number>' ou hash key do server
                 server_key, server_port = self.redirect_shopping_list(shoppingList)
                 server_port = str(server_port)
                 print(server_port)
-                """ server_port_encoded = server_port.encode('utf-8')
-                request = [server_port_encoded, msg[1], msg[2], msg[0]] """
+
+                msg[2] = ("sl:" + json.dumps(shoppingList) + ":" + str(server_key)).encode('utf-8')
 
                 next_servers = self.clockwise_order(int(server_key))
                 print("NEXT SERVERS: ", next_servers)
 
-                # Introduce timeout mechanism
                 start_time = time.time()
-                timeout = 2  # Set your desired timeout in seconds
+                timeout = 2 # seconds
 
                 success = False
 
                 for server_hash in next_servers:
                     server_port_encoded = str(self.ring[server_hash]).encode('utf-8')
-                    request = [server_port_encoded, msg[1], msg[2], msg[0]]
+                    request = [server_port_encoded, msg[2], msg[0]]
 
                     while True:
                         backend.send_multipart(request)
@@ -129,7 +127,7 @@ class Broker:
 
                         if backend in sockets and sockets[backend] == zmq.POLLIN:
                             response_msg = backend.recv_multipart()
-                            # Process the response_msg
+
                             print("Response received:", response_msg)
 
                             if len(response_msg) == 3:
@@ -152,9 +150,10 @@ class Broker:
                 if not success:
                     print("No servers available. Message lost.")
                     print(msg)
-                    msg[2] = "message lost".encode('utf-8')
+                    msg[2] = "shopping list not saved".encode('utf-8')
                     frontend.send_multipart(msg)
     
+
     def _hash(self, key):
         return int(self.hash_func(str(key).encode()).hexdigest(), 16)
     
@@ -166,13 +165,10 @@ class Broker:
         try:
             start_index = sorted_keys.index(key)
         except ValueError:
-            # Handle the case when the key is not in the ring
             return []
 
-        # Rotate the sorted keys to start from the found position
         rotated_keys = sorted_keys[start_index:] + sorted_keys[:start_index]
 
-        # Return the rotated keys as a list
         return rotated_keys
 
     def add_node(self, node):
