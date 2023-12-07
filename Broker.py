@@ -75,12 +75,18 @@ class Broker:
 
                     backend.send_multipart(msg)
 
-                if RING in reply.decode('utf-8'):
+                if RING in msg[1].decode('utf-8'):
                     print("Received ring")
 
-                    reply_message = "received ring".encode('utf-8')
+                    print(msg)
 
-                    backend.send_multipart([msg[0], reply_message])
+                    ring_received = json.loads(reply.decode('utf-8')[5:])
+
+                    print(ring_received)
+
+                    """ if(self.ring['timestamp'] < json.loads(reply.decode('utf-8').split(':')[1])['timestamp']):
+                        self.ring = json.loads(message)
+                        print(self.ring) """
 
                 """ # Forward message to client if it's not a READY
                 elif reply != LRU_READY:

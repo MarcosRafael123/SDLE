@@ -94,21 +94,26 @@ class Server:
         random_key = None
 
         while True:
-            random_key = random.choice(list(self.servers.keys()))
+            random_key = random.choice(list(self.servers.keys()) + self.brokerPorts)
 
             if random_key != "timestamp" and int(random_key) != self.key:
-                """ if random_key in self.brokerPorts:
+                if random_key in self.brokerPorts:
                     random_server = self.brokerPorts[0]
                 else:
-                    random_server = self.servers[random_key] """
-                random_server = self.servers[random_key]
+                    random_server = self.servers[random_key]
                 
                 break
 
+        print("Connecting to server: ", random_server)
+
         server = self.context.socket(zmq.DEALER)
-        server.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
         server.connect("tcp://localhost:" + str(random_server))
-        server.send(("ring:" + json.dumps(self.servers)).encode('utf-8'))
+
+        if random_key in self.brokerPorts:
+            #server.send_multipart([ str(self.port).encode('utf-8'), ("ring:" + json.dumps(self.servers)).encode('utf-8')])
+            server.send_multipart([("ring:" + json.dumps(self.servers)).encode('utf-8')])
+        else: 
+            server.send(("ring:" + json.dumps(self.servers)).encode('utf-8'))
         
     def get_successors(self, source_key, num_succ):
         servers_copy = self.servers.copy()
@@ -243,7 +248,7 @@ class Server:
         worker = self.context.socket(zmq.DEALER)
         worker.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
         worker.connect("tcp://localhost:" + self.brokerPorts[0])
-        worker.send_string(LRU_READY)
+        #worker.send_string(LRU_READY)
 
         self.socket = self.context.socket(zmq.ROUTER)
         self.socket.bind("tcp://*:" + self.port)
