@@ -82,11 +82,11 @@ class Broker:
 
                     ring_received = json.loads(reply.decode('utf-8')[5:])
 
-                    #print(ring_received)
+                    print(ring_received)
 
-                    """ if(self.ring['timestamp'] < json.loads(reply.decode('utf-8').split(':')[1])['timestamp']):
-                        self.ring = json.loads(message)
-                        print(self.ring) """
+                    if(self.ring['timestamp'] < ring_received['timestamp']):
+                        self.ring = ring_received
+                        print(self.ring)
 
                 """ # Forward message to client if it's not a READY
                 elif reply != LRU_READY:
@@ -115,8 +115,12 @@ class Broker:
 
                 msg[2] = ("sl:" + json.dumps(shoppingList) + ":" + str(server_key)).encode('utf-8')
 
+                print("SERVER KEY: ", server_key)
+
                 next_servers = self.clockwise_order(int(server_key))
                 print("NEXT SERVERS: ", next_servers)
+
+                print("RING STATE: ", self.ring)
 
                 start_time = time.time()
                 timeout = 2 # seconds
@@ -171,6 +175,10 @@ class Broker:
         del hash_ring["timestamp"]
 
         sorted_keys = sorted(hash_ring.keys())
+        
+        if len(sorted_keys) <= 1:
+            return sorted_keys
+
         try:
             start_index = sorted_keys.index(key)
         except ValueError:
@@ -179,6 +187,7 @@ class Broker:
         rotated_keys = sorted_keys[start_index:] + sorted_keys[:start_index]
 
         return rotated_keys
+
 
     def add_node(self, node):
         key = self._hash(f"{node}")

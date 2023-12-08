@@ -69,8 +69,8 @@ class Server:
 
         if not key_exists:
             self.shopping_lists.append(shopping_list)
-        else:
-            print(f"The key {shopping_list} already exists in the list.")
+        """ else:
+            print(f"The key {shopping_list} already exists in the list.") """
     
     def clockwise_order(self, key):
         hash_ring = self.servers.copy()
@@ -198,10 +198,14 @@ class Server:
             server.send(("rm_rep:" + str(self.key)).encode('utf-8'))
 
     def clockwise_order(self, key):
-        hash_ring = self.servers.copy()
+        hash_ring = self.ring.copy()
         del hash_ring["timestamp"]
 
         sorted_keys = sorted(hash_ring.keys())
+        
+        if len(sorted_keys) <= 1:
+            return sorted_keys
+
         try:
             start_index = sorted_keys.index(key)
         except ValueError:
@@ -242,7 +246,7 @@ class Server:
                 # send to broker
                 server = self.context.socket(zmq.DEALER)
                 server.connect("tcp://localhost:" + str(self.brokerPorts[0]))
-                server.send(("ring:" + json.dumps(self.servers)).encode('utf-8'))
+                server.send_multipart([("ring:" + json.dumps(self.servers)).encode('utf-8')])
 
                 # send to server
                 server = self.context.socket(zmq.DEALER)
@@ -332,7 +336,9 @@ class Server:
 
                     print("Shopping lists: ", self.shopping_lists)
 
+                    print("AAAAAAAAAAAAAAA")
                     self.send_replicas()
+                    print("BBBBBBBBBBBBBBB")
 
                 elif REP in message_received[1].decode('utf-8'):
                     message = message_received[1].decode('utf-8')[7:]
