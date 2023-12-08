@@ -82,7 +82,9 @@ class Broker:
 
                     #print(msg)
 
-                    ring_received = json.loads(reply.decode('utf-8')[5:])
+                    received = json.loads(reply.decode('utf-8')[5:])
+                    ring_received = {int(key): value if key != 'timestamp' else value for key, value in received.items() if key != 'timestamp'}
+                    ring_received["timestamp"] = received["timestamp"]
 
                     print(ring_received)
 
@@ -167,6 +169,8 @@ class Broker:
                     print(msg)
                     msg[2] = "shopping list not saved".encode('utf-8')
                     frontend.send_multipart(msg)
+
+            print("RING ESTADO: ", self.ring)
     
 
     def _hash(self, key):
