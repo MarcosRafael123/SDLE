@@ -5,6 +5,8 @@ import zmq
 import ShoppingList
 import json
 import time
+import sqlite3
+import uuid
 
 REQUEST_TIMEOUT = 2500
 REQUEST_RETRIES = 3
@@ -13,17 +15,18 @@ SERVER_ENDPOINT = "tcp://localhost:5555"
 LRU_READY = "\x01"
 
 class Client: 
-    def __init__(self, port): 
-        """ self.username = username
-        self.name = name
+    def __init__(self, port, username): 
+        """ self.name = name
         self.email = email
         self.password = password
         self.host = None  """
+        self.username = username
         self.context = zmq.Context()
         self.brokerPorts = ["5555"]
         self.port = port 
         self.connected = True
         self.shopping_lists = []
+        self.load_schema()
         self.run()
         
     """ def set_host(self, host):
@@ -72,7 +75,7 @@ class Client:
                 while True:
                     self.inspect_shopping_list(shopping_list)
 
-                    print("1) Add item")
+                    print("\n1) Add item")
                     print("2) Remove item")
                     print("3) Exit")
 
@@ -103,6 +106,25 @@ class Client:
     def display_shopping_lists(self):
         counter = 1
         dict = {}
+        self.shopping_lists = []
+
+        # Connect to the database and add the item to the Items table
+        connection = sqlite3.connect(self.username + '.db')
+        cursor = connection.cursor()
+
+        # Retrieve the shopping list ID based on some identifier (e.g., URL)
+        cursor.execute("SELECT * FROM ShoppingLists WHERE client_username=?", (self.username,))
+        sls = cursor.fetchall()
+
+        for sl in sls:
+            print(sl)
+            shopping_list = ShoppingList.ShoppingList(sl[2], sl[0])
+            shopping_list.set_timestamp(sl[4])
+            self.shopping_lists.append(shopping_list)
+
+
+        connection.commit()
+        connection.close()
 
         if self.shopping_lists == []:
             print("You have no shopping lists")
@@ -123,25 +145,66 @@ class Client:
                 counter = 1
 
 
-    def add_item_shopping_list(self, shoppinglist):
+    def add_item_shopping_list(self, shopping_list):
         item = input("Enter the item you want to add: ")
         quantity = input("Enter the quantity: ")
-
-        shoppinglist.add_item(item, int(quantity))
             
+        # Connect to the database and add the item to the Items table
+        connection = sqlite3.connect(self.username + '.db')
+        cursor = connection.cursor()
 
-    def remove_item_shopping_list(self, shoppinglist):
+        # Retrieve the shopping list ID based on some identifier (e.g., URL)
+        cursor.execute("SELECT id FROM ShoppingLists WHERE id=?", (shopping_list.get_uuid(),))
+        shopping_list_id = cursor.fetchone()[0]
+
+        # Try to insert the item; if it already exists, it will be ignored
+        # Try to update the quantity of an existing item
+        cursor.execute("UPDATE Items SET quantity = quantity + ? WHERE shopping_list_id = ? AND name = ?",
+                    (int(quantity), shopping_list_id, item))
+
+        # Check if the update affected any rows; if not, insert a new item
+        if cursor.rowcount == 0:
+            cursor.execute("INSERT INTO Items (shopping_list_id, name, quantity) VALUES (?, ?, ?)",
+                        (shopping_list_id, item, int(quantity)))
+        
+        print(time.time())
+        shopping_list.set_timestamp(time.time())
+
+        connection.commit()
+        connection.close()
+
+    def remove_item_shopping_list(self, shopping_list):
         item = input("Enter the item you want to remove: ")
         quantity = input("Enter the quantity: ")
 
-        shoppinglist.remove_item(item, int(quantity))
+        # Connect to the database and add the item to the Items table
+        connection = sqlite3.connect(self.username + '.db')
+        cursor = connection.cursor()
+
+        # Retrieve the shopping list ID based on some identifier (e.g., URL)
+        cursor.execute("SELECT id FROM ShoppingLists WHERE id=?", (shopping_list.get_uuid(),))
+        shopping_list_id = cursor.fetchone()[0]
+
+        cursor.execute("DELETE FROM Items WHERE shopping_list_id = ? AND name = ? AND quantity <= ?",
+               (shopping_list_id, item, int(quantity)))
+        
+        cursor.execute("UPDATE Items SET quantity = quantity - ? WHERE shopping_list_id = ? AND name = ?",
+                    (int(quantity), shopping_list_id, item))
+        
+        print(time.time())
+        shopping_list.set_timestamp(time.time())
+
+        connection.commit()
+        connection.close()
+
 
     def inspect_shopping_list(self, shoppinglist):
-        shoppinglist.print_list()
+        shoppinglist.print_list(self.username)
 
     def pack_message(self, shoppinglist): 
         dictionary = {}
 
+        dictionary["uuid"] = shoppinglist.get_uuid()
         dictionary["url"] = shoppinglist.get_url()
         dictionary["items"] = shoppinglist.get_items()
         dictionary["key"] = shoppinglist.get_key()
@@ -153,11 +216,10 @@ class Client:
         return json.loads(msg[2])
 
     def create_shopping_list(self, url):
-        
-        shopping_list = ShoppingList.ShoppingList(url)
-        shopping_list.set_timestamp(time.time())
 
-        self.shopping_lists.append(shopping_list)
+        new_uuid = str(uuid.uuid4())
+        shopping_list = ShoppingList.ShoppingList(url, new_uuid)
+        shopping_list.set_timestamp(time.time())
 
         logging.info("Connecting to server…")
         client = self.context.socket(zmq.DEALER)
@@ -175,12 +237,54 @@ class Client:
                 reply = client.recv_multipart()
                 print(reply)
                 break
+
+        
+        # Insert the shopping list into the database with the corresponding client ID
+        connection = sqlite3.connect(self.username + '.db')
+        cursor = connection.cursor()
+
+        # Retrieve the client ID based on the username
+        cursor.execute("SELECT id FROM Clients WHERE username=?", (self.username,))
+
+        # Insert the shopping list with the associated client ID
+        key_value = shopping_list.get_key() or ''
+        cursor.execute("INSERT INTO ShoppingLists (id, client_username, url, key, timestamp) VALUES (?, ?, ?, ?, ?)",
+                       (new_uuid, self.username, url, key_value, shopping_list.get_timestamp()))
+
+        connection.commit()
+        connection.close()
+
+    def load_schema(self):
+        # Connect to the SQLite database
+        connection = sqlite3.connect(self.username + '.db')
+        cursor = connection.cursor()
+
+        # Read and execute the SQL file
+        with open('database/shopping_lists.sql', 'r') as sql_file:
+            print("EWEWREWFWEFEFREGH")
+            sql_script = sql_file.read()
+            cursor.executescript(sql_script)
+        
+        # Check if the client already exists
+        cursor.execute("SELECT id FROM Clients WHERE username=? AND port=?", (self.username, self.port))
+        existing_client = cursor.fetchone()
+
+        if existing_client:
+            print("Connecting to existing client...")
+            # Handle connecting to the existing client here
+            # Maybe set some instance variables to keep track of this client
+        else:
+            cursor.execute("INSERT INTO Clients (username, port) VALUES (?, ?)", (self.username, self.port))
+
+        connection.commit()
+        connection.close()
             
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python ./Client.py <port>")
+    if len(sys.argv) != 3:
+        print("Usage: python ./Client.py <port> <username>")
         sys.exit(1)
 
     port = sys.argv[1]
-    Client(port)
+    username = sys.argv[2]
+    Client(port, username)

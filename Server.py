@@ -8,6 +8,7 @@ import random
 import re
 import threading
 import random
+import sqlite3
 
 LRU_READY = "\x01"
 SHOPPINGLIST = "sl:"
@@ -30,6 +31,7 @@ class Server:
         self.socket = None
         logging.info("Connecting to broker...")
         self.add_to_ring()
+        self.load_schema()
         threading.Thread(target=self.send_servers_ring).start()
         threading.Thread(target=self.run).start()
         
@@ -282,6 +284,19 @@ class Server:
                     print(msg)
                     worker.send_multipart(msg)
                     self.shopping_lists.append(message)
+                    print("MESSAGEEEEEEEEEEEEE: ", message)
+                    # Insert the shopping list into the database with the corresponding client ID
+                    connection = sqlite3.connect('server' + self.port + '.db')
+                    cursor = connection.cursor()
+
+                    # Insert the shopping list with the associated client ID
+                    print(type(message["uuid"]))
+                    print(type(message["key"]))
+                    cursor.execute("INSERT INTO ShoppingListsServers (id, server_port, url, key, timestamp) VALUES (?, ?, ?, ?, ?)",
+                                (message["uuid"], self.port, message["url"], str(message["key"]), message["timestamp"]))
+
+                    connection.commit()
+                    connection.close()
                     self.send_replicas()
 
                 else: 
@@ -299,6 +314,34 @@ class Server:
 
             self.send_servers_ring()
             print("Ring: ", self.servers.keys())
+
+
+    def load_schema(self):
+        # Connect to the SQLite database
+        connection = sqlite3.connect('server' + self.port + '.db')
+        cursor = connection.cursor()
+
+        # Read and execute the SQL file
+        with open('database/shopping_lists.sql', 'r') as sql_file:
+            print("EWEWREWFWEFEFREGH")
+            sql_script = sql_file.read()
+            cursor.executescript(sql_script)
+        
+        # Check if the client already exists
+        print("KEY: ", type(self.key))
+        print("PORT: ", self.port)
+        cursor.execute("SELECT id FROM Servers WHERE key=? AND port=?", (str(self.key), self.port))
+        existing_client = cursor.fetchone()
+
+        if existing_client:
+            print("Connecting to existing server...")
+            # Handle connecting to the existing client here
+            # Maybe set some instance variables to keep track of this client
+        else:
+            cursor.execute("INSERT INTO Servers (key, port) VALUES (?, ?)", (str(self.key), self.port))
+
+        connection.commit()
+        connection.close()
             
 
 if __name__ == "__main__":
