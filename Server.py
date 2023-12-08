@@ -197,6 +197,21 @@ class Server:
             #print("Sending to server: ", self.servers[str(successors[1])])
             server.send(("rm_rep:" + str(self.key)).encode('utf-8'))
 
+    def clockwise_order(self, key):
+        hash_ring = self.servers.copy()
+        del hash_ring["timestamp"]
+
+        sorted_keys = sorted(hash_ring.keys())
+        try:
+            start_index = sorted_keys.index(key)
+        except ValueError:
+            return []
+
+        rotated_keys = sorted_keys[start_index:] + sorted_keys[:start_index]
+
+        return rotated_keys
+
+
     def process_hinted_handoff(self):
         current_time = time.time()
 
@@ -208,9 +223,32 @@ class Server:
                 # Handle the case where the timeout has been reached
                 print(f"Timeout reached for key {key}. Entry: {entry}")
 
-                # remove from ring
+                order = self.clockwise_order(key)
 
-                # send to broker to be updated
+                # remove from ring
+                del self.servers[key]
+                self.servers["timestamp"] = time.time()
+
+                print(self.servers)
+
+                # send to broker and to server that will take the changes in to be updated
+                if key in self.replicas:
+                    self.replicas[key] = self.replicas[key].extend(entry['sls'])
+                else:
+                    self.replicas[key] = entry['sls']
+
+                #print(self.replicas)
+
+                # send to broker
+                server = self.context.socket(zmq.DEALER)
+                server.connect("tcp://localhost:" + str(self.brokerPorts[0]))
+                server.send(("ring:" + json.dumps(self.servers)).encode('utf-8'))
+
+                # send to server
+                server = self.context.socket(zmq.DEALER)
+                server.connect("tcp://localhost:" + str(self.servers[order[len(order) - 1]]))
+                server.send(("ring:" + json.dumps(self.servers)).encode('utf-8'))
+                server.send(("sls:" + json.dumps(self.replicas[key])).encode('utf-8'))
 
                 # Remove the expired timestamp_entry
                 del self.hinted_handoff[key]
