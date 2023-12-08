@@ -104,7 +104,7 @@ class Server:
                 
                 break
 
-        print("Connecting to server: ", random_server)
+        #print("Connecting to server: ", random_server)
 
         server = self.context.socket(zmq.DEALER)
         server.connect("tcp://localhost:" + str(random_server))
@@ -113,6 +113,7 @@ class Server:
             #server.send_multipart([ str(self.port).encode('utf-8'), ("ring:" + json.dumps(self.servers)).encode('utf-8')])
             server.send_multipart([("ring:" + json.dumps(self.servers)).encode('utf-8')])
         else: 
+        #if not (random_key in self.brokerPorts):
             server.send(("ring:" + json.dumps(self.servers)).encode('utf-8'))
         
     def get_successors(self, source_key, num_succ):

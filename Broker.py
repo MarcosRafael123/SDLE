@@ -54,9 +54,9 @@ class Broker:
                 msg = backend.recv_multipart()
 
                 print("BACKEND MESSAGE RECEIVED:")
-                print(msg)
+                #print(msg)
                 reply = msg[1]
-                print(reply)
+                #print(reply)
                 
                 if (PORT in reply.decode('utf-8')):
                     print("CCCCC")
@@ -78,11 +78,11 @@ class Broker:
                 if RING in msg[1].decode('utf-8'):
                     print("Received ring")
 
-                    print(msg)
+                    #print(msg)
 
                     ring_received = json.loads(reply.decode('utf-8')[5:])
 
-                    print(ring_received)
+                    #print(ring_received)
 
                     """ if(self.ring['timestamp'] < json.loads(reply.decode('utf-8').split(':')[1])['timestamp']):
                         self.ring = json.loads(message)
@@ -135,6 +135,9 @@ class Broker:
                             response_msg = backend.recv_multipart()
 
                             print("Response received:", response_msg)
+
+                            if len(response_msg) == 2 and (RING in response_msg[1].decode('utf-8') or PORT in response_msg[1].decode('utf-8')):
+                                continue
 
                             if len(response_msg) == 3:
                                 frontend.send_multipart([response_msg[1], response_msg[2]])
