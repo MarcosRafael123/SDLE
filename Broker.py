@@ -19,7 +19,9 @@ class Broker:
         sl_key = shoppinglist["key"]
 
         my_servers = self.ring.copy()
+        print("RING CONTENT: ", self.ring)
         del my_servers["timestamp"]
+        print("MY_SERVERS: ", my_servers)
         my_servers = dict(sorted(my_servers.items(), reverse=True))
         print("MY_SERVERS: ", my_servers)
 

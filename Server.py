@@ -198,7 +198,7 @@ class Server:
             server.send(("rm_rep:" + str(self.key)).encode('utf-8'))
 
     def clockwise_order(self, key):
-        hash_ring = self.ring.copy()
+        hash_ring = self.servers.copy()
         del hash_ring["timestamp"]
 
         sorted_keys = sorted(hash_ring.keys())
@@ -380,6 +380,7 @@ class Server:
                     message = json.loads(message_received[1].decode('utf-8')[5:])
 
                     if message["timestamp"] > self.servers["timestamp"]:
+                        print("RING: ", message)
                         self.servers = message
                         self.transfer_shopping_lists()
                         self.send_replicas()
