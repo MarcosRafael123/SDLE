@@ -194,16 +194,20 @@ class Client:
         print("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
         client.send_multipart([b"sl", self.pack_message(shopping_list).encode('utf-8')])
 
-        """ poller = zmq.Poller()
+        poller = zmq.Poller()
         poller.register(client, zmq.POLLIN)
+        timeout = 2000
 
         while True:
-            events = dict(poller.poll())
+            events = dict(poller.poll(timeout))
             
             if client in events and events[client] == zmq.POLLIN:
                 reply = client.recv_multipart()
                 print(reply)
-                break """
+                break
+            else:
+                print("Timeout occurred, no servers available at the moment")
+                break
 
     def remove_item_shopping_list(self, shopping_list):
         item = input("Enter the item you want to remove: ")
@@ -253,16 +257,20 @@ class Client:
         shopping_list.set_item_quantity(item, item_quantity)
         client.send_multipart([b"sl", self.pack_message(shopping_list).encode('utf-8')])
 
-        """ poller = zmq.Poller()
+        poller = zmq.Poller()
         poller.register(client, zmq.POLLIN)
+        timeout = 2000
 
         while True:
-            events = dict(poller.poll())
+            events = dict(poller.poll(timeout))
             
             if client in events and events[client] == zmq.POLLIN:
                 reply = client.recv_multipart()
                 print(reply)
-                break """
+                break
+            else:
+                print("Timeout occurred, no servers available at the moment")
+                break
 
 
     def inspect_shopping_list(self, shoppinglist):
@@ -325,16 +333,20 @@ class Client:
         client.connect("tcp://localhost:" + self.brokerPorts[0])
         client.send_multipart([b"sl", self.pack_message(shopping_list).encode('utf-8')])
 
-        """ poller = zmq.Poller()
+        poller = zmq.Poller()
         poller.register(client, zmq.POLLIN)
+        timeout = 2000
 
         while True:
-            events = dict(poller.poll())
+            events = dict(poller.poll(timeout))
             
             if client in events and events[client] == zmq.POLLIN:
                 reply = client.recv_multipart()
                 print(reply)
-                break """
+                break
+            else:
+                print("Timeout occurred, no servers available at the moment")
+                break
 
     def load_schema(self):
         # Connect to the SQLite database
