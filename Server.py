@@ -32,7 +32,9 @@ class Server:
         logging.info("Connecting to broker...")
         self.add_to_ring()
         self.load_schema()
-        threading.Thread(target=self.send_servers_ring).start()
+        self.send_servers_ring()
+        print("Ring: ", self.servers.keys())
+        #threading.Thread(target=self.send_servers_ring).start()
         threading.Thread(target=self.run).start()
         
     def add_to_ring(self):
@@ -66,6 +68,7 @@ class Server:
         return json.loads(msg[1].decode('utf-8')[3:])
     
     def send_servers_ring(self):
+        print("SENDING SERVERS RING")
         with self.lock:
             if len(self.servers) <= 2: 
                 return None
@@ -108,6 +111,7 @@ class Server:
         
     def get_successors(self, source_key, num_succ):
         servers_copy = self.servers.copy()
+        print("SERVERS_COPY HERE: ", servers_copy)
         del servers_copy['timestamp']
         transformed_dict = {int(key): value for key, value in servers_copy.items()}
         transformed_dict = dict(sorted(transformed_dict.items()))
@@ -123,15 +127,19 @@ class Server:
             return []
 
         num_servers = len(server_ports)
+        print(num_servers)
         if num_servers <= 1:
             return []
-
+        
         replica_servers = []
 
+        print("reached here 0")
         for i in range(1, min(num_succ + 1, num_servers)):
             index = (source_index + i) % num_servers
             next_server = server_ports[index]
+            print("reached here 1")
             if next_server != source_key:
+                print("reached here 2")
                 replica_servers.append(next_server)
 
         return replica_servers
@@ -139,6 +147,7 @@ class Server:
 
     def send_replicas(self):
         successors = self.get_successors(self.key, REPLICATION_FACTOR)
+        print("SUCCCCCCCCCCCCCCCCCCCCCCCCCESSSSSSSSSSSSSSSSSSSSSSSSSSSORS: ", successors)
 
         for successor in successors:
             server = self.context.socket(zmq.DEALER)
@@ -235,12 +244,25 @@ class Server:
                         key_part = key_part[1:]
 
                     print("KEY_PART: ", key_part)
+                    print("SERVERS DICTIONARY", self.servers)
                     
                     replica = json.loads(json_part)
 
                     self.replicas[key_part] = replica
 
-                    print("Replicas: ", self.replicas.keys())
+                    print("Replica: ", replica)
+                    if replica != []:
+                        # Insert the shopping list into the database with the corresponding client ID
+                        connection = sqlite3.connect('server' + self.port + '.db')
+                        cursor = connection.cursor()
+
+                        # Insert the shopping list with the associated client ID
+                        cursor.execute("INSERT INTO Replicas (id, server_sender, url, key, timestamp) VALUES (?, ?, ?, ?, ?)",
+                                    (replica[0]["uuid"], self.servers[key_part], replica[0]["url"], str(replica[0]["key"]), replica[0]["timestamp"]))
+
+                        connection.commit()
+                        connection.close()
+
 
                 if RMREP in message_received[1].decode('utf-8'):
                     message = message_received[1].decode('utf-8')[7:]
@@ -295,6 +317,7 @@ class Server:
 
                         connection.commit()
                         connection.close()
+                        print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
                         self.send_replicas()
                     else:
                         msg.insert(0, msg[2])
@@ -349,8 +372,8 @@ class Server:
             if elapsed_time < 1:
                 time.sleep(1 - elapsed_time) """
 
-            self.send_servers_ring()
-            print("Ring: ", self.servers.keys())
+            """ self.send_servers_ring()
+            print("Ring: ", self.servers.keys()) """
 
 
     def load_schema(self):

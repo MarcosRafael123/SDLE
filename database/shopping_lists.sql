@@ -38,6 +38,15 @@ CREATE TABLE IF NOT EXISTS ItemsServers (
     FOREIGN KEY(shopping_list_servers_id) REFERENCES ShoppingListsServers(id)
 );
 
+CREATE TABLE IF NOT EXISTS Replicas (
+    id TEXT PRIMARY KEY,
+    server_sender INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    url TEXT NOT NULL UNIQUE,
+    timestamp INTEGER NOT NULL,
+    FOREIGN KEY(server_sender) REFERENCES Servers(port)
+);
+
 CREATE TABLE IF NOT EXISTS Servers (
     id INTEGER PRIMARY KEY,
     key TEXT NOT NULL,
