@@ -95,9 +95,9 @@ class Client:
 
                         shopping_list = shopping_list.merge(shoppinglist)
 
-                        """ self.send_shopping_list(shopping_list)
+                        self.send_shopping_list(shopping_list)
                     else:
-                        self.send_shopping_list(shopping_list) """
+                        self.send_shopping_list(shopping_list)
 
             elif choice == "3":
                 if self.connected: 
@@ -232,7 +232,7 @@ class Client:
         client.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
         client.connect("tcp://localhost:" + self.brokerPorts[0])
 
-        client.send_multipart([("sendSL:" + self.pack_message(shopping_list)).encode('utf-8')])
+        client.send_multipart([b"sl", (self.pack_message(shopping_list)).encode('utf-8')])
 
         poller = zmq.Poller()
         poller.register(client, zmq.POLLIN)

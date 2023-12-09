@@ -8,6 +8,7 @@ import random
 import re
 import threading
 import random
+import ShoppingListCRDT
 
 LRU_READY = "\x01"
 SHOPPINGLIST = "sl:"
@@ -70,8 +71,25 @@ class Server:
 
         if not key_exists:
             self.shopping_lists.append(shopping_list)
-        """ else:
-            print(f"The key {shopping_list} already exists in the list.") """
+        else:
+            print(f"The key {shopping_list} already exists in the list.")
+            sl = ShoppingListCRDT.ShoppingListCRDT(shopping_list['url'], shopping_list['additions'], shopping_list['removals'])
+            sl.set_key(shopping_list['key'])
+
+            index = next((i for i, item in enumerate(self.shopping_lists) if item['key'] == shopping_list['key']), None)
+
+            if index is not None:
+                sl_original = ShoppingListCRDT.ShoppingListCRDT(self.shopping_lists[index]['url'], self.shopping_lists[index]['additions'], self.shopping_lists[index]['removals'])
+                sl_original.set_key(self.shopping_lists[index]['key'])
+
+                sl_merged = sl.merge(sl_original)
+
+                self.shopping_lists[index]['items'] = sl_merged.get_items()
+                self.shopping_lists[index]['additions'] = sl_merged.get_additions()
+                self.shopping_lists[index]['removals'] = sl_merged.get_removals()
+
+                print("AAAAAAAAAAAAAAA: ", self.shopping_lists[index])
+
     
     def clockwise_order(self, key):
         hash_ring = self.servers.copy()
