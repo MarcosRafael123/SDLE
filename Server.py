@@ -271,33 +271,70 @@ class Server:
             if worker in events and events[worker] == zmq.POLLIN:
                 msg = worker.recv_multipart()
 
-                print(msg)
-
                 message = self.unpack_message(msg)
                 print(message)
                 
                 if(SHOPPINGLIST in msg[1].decode('utf-8')):
-                    msg.insert(0, msg[2])
-                    msg.pop(3)
-                    msg.pop(2)
-                    msg[1] = "received shopping list".encode('utf-8')
-                    print(msg)
-                    worker.send_multipart(msg)
-                    self.shopping_lists.append(message)
-                    print("MESSAGEEEEEEEEEEEEE: ", message)
-                    # Insert the shopping list into the database with the corresponding client ID
-                    connection = sqlite3.connect('server' + self.port + '.db')
-                    cursor = connection.cursor()
+                    print("MSGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG: ", message["items"])
+                    if (message["items"] == {}):
+                        msg.insert(0, msg[2])
+                        msg.pop(3)
+                        msg.pop(2)
+                        msg[1] = "received shopping list".encode('utf-8')
+                        print(msg)
+                        worker.send_multipart(msg)
+                        self.shopping_lists.append(message)
+                        print("MESSAGEEEEEEEEEEEEE: ", message)
+                        # Insert the shopping list into the database with the corresponding client ID
+                        connection = sqlite3.connect('server' + self.port + '.db')
+                        cursor = connection.cursor()
 
-                    # Insert the shopping list with the associated client ID
-                    print(type(message["uuid"]))
-                    print(type(message["key"]))
-                    cursor.execute("INSERT INTO ShoppingListsServers (id, server_port, url, key, timestamp) VALUES (?, ?, ?, ?, ?)",
-                                (message["uuid"], self.port, message["url"], str(message["key"]), message["timestamp"]))
+                        # Insert the shopping list with the associated client ID
+                        cursor.execute("INSERT INTO ShoppingListsServers (id, server_port, url, key, timestamp) VALUES (?, ?, ?, ?, ?)",
+                                    (message["uuid"], self.port, message["url"], str(message["key"]), message["timestamp"]))
 
-                    connection.commit()
-                    connection.close()
-                    self.send_replicas()
+                        connection.commit()
+                        connection.close()
+                        self.send_replicas()
+                    else:
+                        msg.insert(0, msg[2])
+                        msg.pop(3)
+                        msg.pop(2)
+                        msg[1] = "received shopping list update".encode('utf-8')
+                        print(msg)
+                        worker.send_multipart(msg)
+                        self.shopping_lists.append(message)
+                        print("MESSAGEEEEEEEEEEEEE: ", message)
+                        # Insert the shopping list into the database with the corresponding client ID
+                        connection = sqlite3.connect('server' + self.port + '.db')
+                        cursor = connection.cursor()
+
+                        # Insert the shopping list with the associated client ID
+                        print("MESSAGE ITEMS= ", message["items"])
+                        for key, value in message["items"].items():
+                            print("Key:", key)
+                            print("Value:", value)
+                            cursor.execute("SELECT COUNT(*) FROM ItemsServers WHERE shopping_list_servers_id = ? AND name = ?",
+                                           (message["uuid"], key))
+                            result = cursor.fetchone()
+                            if result[0] > 0:
+                                if value > 0:
+                                    cursor.execute("UPDATE ItemsServers SET quantity = ? WHERE shopping_list_servers_id = ? AND name = ?",
+                                        (value, message["uuid"], key))
+                                else:
+                                    print(key)
+                                    print("DELETING ITEM")
+                                    cursor.execute("DELETE FROM ItemsServers WHERE shopping_list_servers_id=? AND name=?", (message["uuid"], key))
+
+                            else:
+                                # Record doesn't exist, perform an INSERT
+                                if value > 0:
+                                    cursor.execute("INSERT INTO ItemsServers (shopping_list_servers_id, name, quantity) VALUES (?, ?, ?)",
+                                        (message["uuid"], key, value))
+
+                        connection.commit()
+                        connection.close()
+                        self.send_replicas()
 
                 else: 
                     msg.insert(0, msg[2])
@@ -331,12 +368,16 @@ class Server:
         print("KEY: ", type(self.key))
         print("PORT: ", self.port)
         cursor.execute("SELECT id FROM Servers WHERE key=? AND port=?", (str(self.key), self.port))
-        existing_client = cursor.fetchone()
+        existing_server = cursor.fetchone()
+        print(existing_server)
 
-        if existing_client:
+        if existing_server:
             print("Connecting to existing server...")
-            # Handle connecting to the existing client here
-            # Maybe set some instance variables to keep track of this client
+            """ print(self.key)
+            print(self.port)
+            cursor.execute("SELECT * FROM ShoppingListsServers WHERE server_port=?", (self.port,))
+            sls = cursor.fetchall()
+            print(sls) """
         else:
             cursor.execute("INSERT INTO Servers (key, port) VALUES (?, ?)", (str(self.key), self.port))
 

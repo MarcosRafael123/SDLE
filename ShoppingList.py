@@ -28,6 +28,9 @@ class ShoppingList :
     def set_timestamp(self, timestamp):
         self.timestamp = timestamp
 
+    def set_item_quantity(self, item, quantity):
+        self.items[item] = quantity
+
     # other methods
     def print_list(self, client_username):
         print("Shopping list for " + self.url + ":"'\n')
@@ -41,11 +44,12 @@ class ShoppingList :
 
         # Insert the item with the associated shopping list ID
         cursor.execute("SELECT * FROM Items WHERE shopping_list_id=?", (shopping_list_id,))
-        self.items = cursor.fetchall()
-        for item in self.items:
+        items = cursor.fetchall()
+        for item in items:
             print(str(item[2]) + ": " + str(item[3]))
 
     def add_item(self, item, quantity):
+        print("items dict: ", type(self.items))
         if item in self.items:
             self.items[item] += quantity
         else:

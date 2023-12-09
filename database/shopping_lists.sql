@@ -24,10 +24,18 @@ CREATE TABLE IF NOT EXISTS Items (
 CREATE TABLE IF NOT EXISTS ShoppingListsServers (
     id TEXT PRIMARY KEY,
     server_port INTEGER NOT NULL,
-    url TEXT NOT NULL UNIQUE,
     key TEXT NOT NULL,
+    url TEXT NOT NULL UNIQUE,
     timestamp INTEGER NOT NULL,
     FOREIGN KEY(server_port) REFERENCES Servers(port)
+);
+
+CREATE TABLE IF NOT EXISTS ItemsServers (
+    id INTEGER PRIMARY KEY,
+    shopping_list_servers_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    FOREIGN KEY(shopping_list_servers_id) REFERENCES ShoppingListsServers(id)
 );
 
 CREATE TABLE IF NOT EXISTS Servers (

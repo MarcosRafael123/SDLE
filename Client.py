@@ -3,6 +3,7 @@ import logging
 import sys
 import zmq
 import ShoppingList
+import Item
 import json
 import time
 import sqlite3
@@ -148,6 +149,11 @@ class Client:
     def add_item_shopping_list(self, shopping_list):
         item = input("Enter the item you want to add: ")
         quantity = input("Enter the quantity: ")
+
+        #item = Item.Item(name, quantity)
+
+        shopping_list.add_item(item, int(quantity))
+
             
         # Connect to the database and add the item to the Items table
         connection = sqlite3.connect(self.username + '.db')
@@ -170,12 +176,42 @@ class Client:
         print(time.time())
         shopping_list.set_timestamp(time.time())
 
+        print(shopping_list.get_uuid())
+        print(item)
+        cursor.execute("SELECT quantity FROM Items WHERE shopping_list_id=? AND name=?", (shopping_list.get_uuid(),item))
+        item_quantity = cursor.fetchone()[0]
+        print("ITRBAWNDNAWDUA: ", item_quantity)
+
         connection.commit()
         connection.close()
+
+        logging.info("Connecting to server…")
+        client = self.context.socket(zmq.DEALER)
+        client.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
+        client.connect("tcp://localhost:" + self.brokerPorts[0])
+        print("ASDFGHJKL: ", self.pack_message(shopping_list).encode('utf-8'))
+        shopping_list.set_item_quantity(item, item_quantity)
+        print("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
+        client.send_multipart([b"sl", self.pack_message(shopping_list).encode('utf-8')])
+
+        """ poller = zmq.Poller()
+        poller.register(client, zmq.POLLIN)
+
+        while True:
+            events = dict(poller.poll())
+            
+            if client in events and events[client] == zmq.POLLIN:
+                reply = client.recv_multipart()
+                print(reply)
+                break """
 
     def remove_item_shopping_list(self, shopping_list):
         item = input("Enter the item you want to remove: ")
         quantity = input("Enter the quantity: ")
+
+        #item = Item.Item(name, quantity)
+
+        shopping_list.remove_item(item, int(quantity))
 
         # Connect to the database and add the item to the Items table
         connection = sqlite3.connect(self.username + '.db')
@@ -184,33 +220,78 @@ class Client:
         # Retrieve the shopping list ID based on some identifier (e.g., URL)
         cursor.execute("SELECT id FROM ShoppingLists WHERE id=?", (shopping_list.get_uuid(),))
         shopping_list_id = cursor.fetchone()[0]
-
-        cursor.execute("DELETE FROM Items WHERE shopping_list_id = ? AND name = ? AND quantity <= ?",
-               (shopping_list_id, item, int(quantity)))
         
-        cursor.execute("UPDATE Items SET quantity = quantity - ? WHERE shopping_list_id = ? AND name = ?",
-                    (int(quantity), shopping_list_id, item))
+        cursor.execute("UPDATE Items SET quantity = CASE WHEN (quantity - ?) < 0 THEN 0 ELSE (quantity - ?) END WHERE shopping_list_id = ? AND name = ?",
+                       (int(quantity), int(quantity), shopping_list_id, item)
+)
         
         print(time.time())
         shopping_list.set_timestamp(time.time())
 
+        print(shopping_list.get_uuid())
+        print(item)
+        cursor.execute("SELECT quantity FROM Items WHERE shopping_list_id=? AND name=?", (shopping_list.get_uuid(),item))
+        item_quantity = cursor.fetchone()[0]
+        print("AFDOADOADOA;DAOD;AWOD;AWD;AOD;AWOD;AWOD;ADO;A;DOAW;DOAW;:", item_quantity)
+        """ if cursor.fetchall() == []:
+            item_quantity = 0
+        else:
+            print("ITRBAWNDNAWDUA: ", item_quantity) """
+        
+        if item_quantity == 0:
+            cursor.execute("DELETE FROM Items WHERE shopping_list_id = ? AND name = ?",
+               (shopping_list_id, item))
+        
+
         connection.commit()
         connection.close()
+
+        logging.info("Connecting to server…")
+        client = self.context.socket(zmq.DEALER)
+        client.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
+        client.connect("tcp://localhost:" + self.brokerPorts[0])
+        shopping_list.set_item_quantity(item, item_quantity)
+        client.send_multipart([b"sl", self.pack_message(shopping_list).encode('utf-8')])
+
+        """ poller = zmq.Poller()
+        poller.register(client, zmq.POLLIN)
+
+        while True:
+            events = dict(poller.poll())
+            
+            if client in events and events[client] == zmq.POLLIN:
+                reply = client.recv_multipart()
+                print(reply)
+                break """
 
 
     def inspect_shopping_list(self, shoppinglist):
         shoppinglist.print_list(self.username)
 
     def pack_message(self, shoppinglist): 
-        dictionary = {}
+        print("SHOPPING LIST ITEMS: ", shoppinglist.get_items())
+        if shoppinglist.get_items() == {}:
 
-        dictionary["uuid"] = shoppinglist.get_uuid()
-        dictionary["url"] = shoppinglist.get_url()
-        dictionary["items"] = shoppinglist.get_items()
-        dictionary["key"] = shoppinglist.get_key()
-        dictionary["timestamp"] = shoppinglist.get_timestamp()
+            dictionary = {}
 
-        return "sl:" + json.dumps(dictionary, sort_keys=True)
+            dictionary["uuid"] = shoppinglist.get_uuid()
+            dictionary["url"] = shoppinglist.get_url()
+            dictionary["items"] = shoppinglist.get_items()
+            dictionary["key"] = shoppinglist.get_key()
+            dictionary["timestamp"] = shoppinglist.get_timestamp()
+
+            return "sl:" + json.dumps(dictionary, sort_keys=True)
+        else:
+            dictionary = {}
+
+            dictionary["uuid"] = shoppinglist.get_uuid()
+            dictionary["url"] = shoppinglist.get_url()
+            dictionary["items"] = shoppinglist.get_items()
+            dictionary["key"] = shoppinglist.get_key()
+            dictionary["timestamp"] = shoppinglist.get_timestamp()
+
+            print("miofnsefninvfnisniniosnioesnbiosniobfes")
+            return "sl:" + json.dumps(dictionary, sort_keys=True)
 
     def unpack_message(self, msg):
         return json.loads(msg[2])
@@ -221,24 +302,8 @@ class Client:
         shopping_list = ShoppingList.ShoppingList(url, new_uuid)
         shopping_list.set_timestamp(time.time())
 
-        logging.info("Connecting to server…")
-        client = self.context.socket(zmq.DEALER)
-        client.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
-        client.connect("tcp://localhost:" + self.brokerPorts[0])
-        client.send_multipart([b"sl", self.pack_message(shopping_list).encode('utf-8')])
+        self.shopping_lists.append(shopping_list)
 
-        poller = zmq.Poller()
-        poller.register(client, zmq.POLLIN)
-
-        while True:
-            events = dict(poller.poll())
-            
-            if client in events and events[client] == zmq.POLLIN:
-                reply = client.recv_multipart()
-                print(reply)
-                break
-
-        
         # Insert the shopping list into the database with the corresponding client ID
         connection = sqlite3.connect(self.username + '.db')
         cursor = connection.cursor()
@@ -253,6 +318,23 @@ class Client:
 
         connection.commit()
         connection.close()
+
+        logging.info("Connecting to server…")
+        client = self.context.socket(zmq.DEALER)
+        client.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
+        client.connect("tcp://localhost:" + self.brokerPorts[0])
+        client.send_multipart([b"sl", self.pack_message(shopping_list).encode('utf-8')])
+
+        """ poller = zmq.Poller()
+        poller.register(client, zmq.POLLIN)
+
+        while True:
+            events = dict(poller.poll())
+            
+            if client in events and events[client] == zmq.POLLIN:
+                reply = client.recv_multipart()
+                print(reply)
+                break """
 
     def load_schema(self):
         # Connect to the SQLite database

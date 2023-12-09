@@ -14,11 +14,14 @@ class Broker:
         self.hash_func = hash_func
         self.ring = {}
         self.sorted_keys = []
+        self.shopping_lists = []
 
     def redirect_shopping_list(self, shoppinglist):
         sl_key = shoppinglist["key"]
 
         my_servers = self.ring.copy()
+        if my_servers == {}:
+            return
         del my_servers["timestamp"]
         my_servers = dict(sorted(my_servers.items(), reverse=True))
         print("MY_SERVERS: ", my_servers)
@@ -29,12 +32,13 @@ class Broker:
             
             if int(key) <= sl_key:
                 server_to_send = value
+                print("reached here")
                 return server_to_send
 
+        print("reached here 2")
         return my_servers[max(my_servers, key=my_servers.get)]
 
     def run(self): 
-
         context = zmq.Context(1)
 
         frontend = context.socket(zmq.ROUTER)
@@ -52,7 +56,7 @@ class Broker:
             if backend in sockets and sockets[backend] == zmq.POLLIN:
                 msg = backend.recv_multipart()
 
-                print(msg)
+                print("UEFHUSIEHFSUHFSIFUSHFSUIOOJIWJD8JD289JD289J298J8J893JD892JD289DJ28DJ289DJ28JD89DDNCKJSNCJSNCJSK: ", msg)
                 reply = msg[1]
                 print(reply)
                 
@@ -82,11 +86,15 @@ class Broker:
                 elif reply != LRU_READY:
                     if(len(msg) == 3): 
                         frontend.send_multipart([msg[1], msg[2]])
+                        print("ENTERED IN THE RECEIVED SHOPPING LIST SECTION: ", msg[2])
+                        self.shopping_lists.clear()
                     else:
                         frontend.send_multipart(msg)
-                        
+                    
+                    print("SHOPPING LISTS ARE HERE IN THIS PRINT", self.shopping_lists)
 
             if frontend in sockets and sockets[frontend] == zmq.POLLIN:
+                print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
                 msg = frontend.recv_multipart()
 
                 print(msg)
@@ -96,18 +104,21 @@ class Broker:
                 if (shoppingList["key"] == None):
                     key = self._hash(shoppingList["url"])
                     shoppingList["key"] = key
-                    msg[2] = ("sl:" + json.dumps(shoppingList)).encode('utf-8')
-                    print("SHOPPING LIST: ", shoppingList)
+                    self.shopping_lists.append(shoppingList)
 
                 # verificar em que server se guarda
 
                 # workers.pop(0) -> replace por b'<port number>' ou hash key do server
-                server_port = str(self.redirect_shopping_list(shoppingList))
-                print(server_port)
-                server_port_encoded = server_port.encode('utf-8')
-                request = [server_port_encoded, msg[1], msg[2], msg[0]]
+                print("SELF.SHOPPING_LISTS: ", self.shopping_lists)
+                for shopping_list in self.shopping_lists:
+                    print("SHOPPING LIST: ", shopping_list)
+                    msg[2] = ("sl:" + json.dumps(shopping_list)).encode('utf-8')
+                    server_port = str(self.redirect_shopping_list(shopping_list))
+                    print(server_port)
+                    server_port_encoded = server_port.encode('utf-8')
+                    request = [server_port_encoded, msg[1], msg[2], msg[0]]
 
-                backend.send_multipart(request)
+                    backend.send_multipart(request)
     
     def _hash(self, key):
         return int(self.hash_func(str(key).encode()).hexdigest(), 16)
