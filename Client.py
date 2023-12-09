@@ -85,6 +85,20 @@ class Client:
                     else:
                         break
                     
+                    sl = self.request_shopping_list(shopping_list.get_url())
+
+                    #print(sl)
+
+                    if sl is not None:
+                        shoppinglist = ShoppingListCRDT.ShoppingListCRDT(sl["url"], sl["additions"], sl["removals"])
+                        shoppinglist.set_key(sl["key"])
+
+                        shopping_list = shopping_list.merge(shoppinglist)
+
+                        """ self.send_shopping_list(shopping_list)
+                    else:
+                        self.send_shopping_list(shopping_list) """
+
             elif choice == "3":
                 if self.connected: 
                     self.connected = False
@@ -127,14 +141,16 @@ class Client:
         item = input("Enter the item you want to add: ")
         quantity = input("Enter the quantity: ")
 
-        shoppinglist.add_item(item, int(quantity))
+        for i in range(0, int(quantity)):
+            shoppinglist.add_item(item)
             
 
     def remove_item_shopping_list(self, shoppinglist):
         item = input("Enter the item you want to remove: ")
         quantity = input("Enter the quantity: ")
 
-        shoppinglist.remove_item(item, int(quantity))
+        for i in range(0, int(quantity)):
+            shoppinglist.remove_item(item)
 
     def inspect_shopping_list(self, shoppinglist):
         shoppinglist.print_list()
@@ -145,6 +161,8 @@ class Client:
         dictionary["url"] = shoppinglist.get_url()
         dictionary["items"] = shoppinglist.get_items()
         dictionary["key"] = shoppinglist.get_key()
+        dictionary["additions"] = shoppinglist.get_additions()
+        dictionary["removals"] = shoppinglist.get_removals()
 
         return "sl:" + json.dumps(dictionary, sort_keys=True)
 
@@ -175,6 +193,60 @@ class Client:
                 print(reply)
                 break
             
+    def request_shopping_list(self, url): 
+
+        logging.info("Connecting to server…")
+        client = self.context.socket(zmq.DEALER)
+        client.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
+        client.connect("tcp://localhost:" + self.brokerPorts[0])
+        
+        client.send_multipart([("requestSL:" + url).encode('utf-8')])
+
+        poller = zmq.Poller()
+        poller.register(client, zmq.POLLIN)
+
+        sl = None
+
+        while True:
+            events = dict(poller.poll())
+            
+            if client in events and events[client] == zmq.POLLIN:
+                reply = client.recv_multipart()
+                print(reply)
+                reply = reply[0].decode('utf-8')
+
+                if reply == "Shopping list not found": 
+                    break
+                
+                sl = json.loads(reply)
+
+                #print("SL AFTER LOADS: ", sl)
+                break
+
+        return sl
+
+    def send_shopping_list(self, shopping_list):
+
+        logging.info("Connecting to server…")
+        client = self.context.socket(zmq.DEALER)
+        client.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
+        client.connect("tcp://localhost:" + self.brokerPorts[0])
+
+        client.send_multipart([("sendSL:" + self.pack_message(shopping_list)).encode('utf-8')])
+
+        poller = zmq.Poller()
+        poller.register(client, zmq.POLLIN)
+
+        while True:
+            events = dict(poller.poll())
+            
+            if client in events and events[client] == zmq.POLLIN:
+                reply = client.recv_multipart()
+                print(reply)
+                break
+
+
+        return
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

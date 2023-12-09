@@ -13,6 +13,7 @@ LRU_READY = "\x01"
 SHOPPINGLIST = "sl:"
 SHOPPINGLISTS = "sls:"
 RING = "ring:"
+REQUEST_SHOPPING_LIST = "requestSL:"
 REP = "sl_rep:"
 NREP = "sl_nrep:"
 RMREP = "rm_rep:"
@@ -389,8 +390,30 @@ class Server:
                 msg = worker.recv_multipart()
 
                 print(msg)
+
+                if REQUEST_SHOPPING_LIST in msg[0].decode('utf-8'): 
+                    message = msg[0].decode('utf-8')[10:]
+
+                    print(message) 
+
+                    sl = None
+
+                    for shopping_list in self.shopping_lists:
+                        if shopping_list["url"] == message: 
+                            sl = shopping_list
+
+                    if sl == None: 
+                        for server in self.replicas.keys(): 
+                            for shoppinglist in self.replicas[server]: 
+                                if shoppinglist["url"] == message: 
+                                    sl = shoppinglist
+
+                    if sl == None:
+                        sl = "Shopping list not found"
+                    
+                    worker.send_multipart([msg[1], json.dumps(sl).encode('utf-8')])
                 
-                if(SHOPPINGLIST in msg[0].decode('utf-8')):
+                elif(SHOPPINGLIST in msg[0].decode('utf-8')):
                     response = "received shopping list".encode('utf-8')
                     print(msg)
                     worker.send_multipart([msg[1], response])

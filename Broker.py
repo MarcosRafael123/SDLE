@@ -6,6 +6,8 @@ import time
 LRU_READY = "\x01"
 PORT = "port:"
 RING = "ring:"
+SHOPPING_LIST = "sl:"
+REQUEST_SHOPPING_LIST = "requestSL:"
 
 class Broker: 
     def __init__(self, portFrontend, portBackend, nodes=None, hash_func = hashlib.sha256): 
@@ -17,6 +19,27 @@ class Broker:
 
     def redirect_shopping_list(self, shoppinglist):
         sl_key = shoppinglist["key"]
+
+        my_servers = self.ring.copy()
+        print("RING CONTENT: ", self.ring)
+        del my_servers["timestamp"]
+        print("MY_SERVERS: ", my_servers)
+        my_servers = dict(sorted(my_servers.items(), reverse=True))
+        print("MY_SERVERS: ", my_servers)
+
+        for key, value in my_servers.items():
+            print("KEY: ", key)
+            print("SL_KEY: ", sl_key)
+            
+            if int(key) <= sl_key:
+                server_to_send = value
+                return key, server_to_send
+
+        max_key = max(my_servers, key=my_servers.get)
+        return max_key, my_servers[max_key]
+
+    def request_shopping_list(self, url):
+        sl_key = self._hash(url)
 
         my_servers = self.ring.copy()
         print("RING CONTENT: ", self.ring)
@@ -104,71 +127,122 @@ class Broker:
                 msg = frontend.recv_multipart()
 
                 print(msg)
-                shoppingList = json.loads(msg[2].decode('utf-8')[3:])
-                print(shoppingList)
 
-                if (shoppingList["key"] == None):
-                    key = self._hash(shoppingList["url"])
-                    shoppingList["key"] = key
-                    #msg[2] = ("sl:" + json.dumps(shoppingList) + ":").encode('utf-8')
-                    print("SHOPPING LIST: ", shoppingList)
+                if REQUEST_SHOPPING_LIST in msg[1].decode('utf-8'): 
+                    server_key, server_port = self.request_shopping_list(msg[1].decode('utf-8')[10:])
+                    print("SERVER TO REQUEST: ", server_key, ", ", server_port)
 
-                server_key, server_port = self.redirect_shopping_list(shoppingList)
-                server_port = str(server_port)
-                print(server_port)
+                    server_port = str(server_port)                      
 
-                msg[2] = ("sl:" + json.dumps(shoppingList) + ":" + str(server_key)).encode('utf-8')
+                    next_servers = self.clockwise_order(int(server_key))
+                    print("NEXT SERVERS: ", next_servers)
 
-                print("SERVER KEY: ", server_key)
+                    start_time = time.time()
+                    timeout = 2 # seconds
 
-                next_servers = self.clockwise_order(int(server_key))
-                print("NEXT SERVERS: ", next_servers)
+                    success = False
 
-                print("RING STATE: ", self.ring)
+                    for server_hash in next_servers:
+                        server_port_encoded = str(self.ring[server_hash]).encode('utf-8')
+                        request = [server_port_encoded, msg[1], msg[0]]
 
-                start_time = time.time()
-                timeout = 2 # seconds
+                        while True:
+                            backend.send_multipart(request)
+                            sockets = dict(poll_both.poll(timeout=100))
 
-                success = False
+                            if backend in sockets and sockets[backend] == zmq.POLLIN:
+                                response_msg = backend.recv_multipart()
 
-                for server_hash in next_servers:
-                    server_port_encoded = str(self.ring[server_hash]).encode('utf-8')
-                    request = [server_port_encoded, msg[2], msg[0]]
+                                print("Response received:", response_msg)
 
-                    while True:
-                        backend.send_multipart(request)
-                        sockets = dict(poll_both.poll(timeout=100))
+                                if len(response_msg) == 2 and (RING in response_msg[1].decode('utf-8') or PORT in response_msg[1].decode('utf-8')):
+                                    continue
 
-                        if backend in sockets and sockets[backend] == zmq.POLLIN:
-                            response_msg = backend.recv_multipart()
+                                if len(response_msg) == 3:
+                                    frontend.send_multipart([response_msg[1], response_msg[2]])
+                                else:
+                                    frontend.send_multipart(response_msg)
 
-                            print("Response received:", response_msg)
+                                success = True
+                                break
 
-                            if len(response_msg) == 2 and (RING in response_msg[1].decode('utf-8') or PORT in response_msg[1].decode('utf-8')):
-                                continue
+                            elapsed_time = time.time() - start_time
 
-                            if len(response_msg) == 3:
-                                frontend.send_multipart([response_msg[1], response_msg[2]])
-                            else:
-                                frontend.send_multipart(response_msg)
+                            if elapsed_time >= timeout:
+                                print("Timeout reached. No response received.")
+                                break
 
-                            success = True
-                            break
+                        if success:
+                            break 
 
-                        elapsed_time = time.time() - start_time
+                
+                elif SHOPPING_LIST in msg[2].decode('utf-8'):
+                    shoppingList = json.loads(msg[2].decode('utf-8')[3:])
+                    print(shoppingList)
 
-                        if elapsed_time >= timeout:
-                            print("Timeout reached. No response received.")
-                            break
+                    if (shoppingList["key"] == None):
+                        key = self._hash(shoppingList["url"])
+                        shoppingList["key"] = key
+                        #msg[2] = ("sl:" + json.dumps(shoppingList) + ":").encode('utf-8')
+                        print("SHOPPING LIST: ", shoppingList)
 
-                    if success:
-                        break 
+                    server_key, server_port = self.redirect_shopping_list(shoppingList)
+                    server_port = str(server_port)
+                    print(server_port)
 
-                if not success:
-                    print("No servers available. Message lost.")
-                    print(msg)
-                    msg[2] = "shopping list not saved".encode('utf-8')
-                    frontend.send_multipart(msg)
+                    msg[2] = ("sl:" + json.dumps(shoppingList) + ":" + str(server_key)).encode('utf-8')
+
+                    print("SERVER KEY: ", server_key)
+
+                    next_servers = self.clockwise_order(int(server_key))
+                    print("NEXT SERVERS: ", next_servers)
+
+                    print("RING STATE: ", self.ring)
+
+                    start_time = time.time()
+                    timeout = 2 # seconds
+
+                    success = False
+
+                    for server_hash in next_servers:
+                        server_port_encoded = str(self.ring[server_hash]).encode('utf-8')
+                        request = [server_port_encoded, msg[2], msg[0]]
+
+                        while True:
+                            backend.send_multipart(request)
+                            sockets = dict(poll_both.poll(timeout=100))
+
+                            if backend in sockets and sockets[backend] == zmq.POLLIN:
+                                response_msg = backend.recv_multipart()
+
+                                print("Response received:", response_msg)
+
+                                if len(response_msg) == 2 and (RING in response_msg[1].decode('utf-8') or PORT in response_msg[1].decode('utf-8')):
+                                    continue
+
+                                if len(response_msg) == 3:
+                                    frontend.send_multipart([response_msg[1], response_msg[2]])
+                                else:
+                                    frontend.send_multipart(response_msg)
+
+                                success = True
+                                break
+
+                            elapsed_time = time.time() - start_time
+
+                            if elapsed_time >= timeout:
+                                print("Timeout reached. No response received.")
+                                break
+
+                        if success:
+                            break 
+
+                    if not success:
+                        print("No servers available. Message lost.")
+                        print(msg)
+                        msg[2] = "shopping list not saved".encode('utf-8')
+                        frontend.send_multipart(msg)
+
 
             print("RING ESTADO: ", self.ring)
     
