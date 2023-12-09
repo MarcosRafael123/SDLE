@@ -46,14 +46,15 @@ class Client:
         while True: 
             print("1) Create new shopping list")
             print("2) Edit shopping list")
+            print("3) Join shopping list")
 
             if self.connected:
-                print("3) Go offline")
+                print("4) Go offline")
                 
             else:
-                print("3) Go online")
+                print("4) Go online")
             
-            print("4) Exit")
+            print("5) Exit")
 
             
             choice = input("Enter your choice: ")
@@ -99,7 +100,24 @@ class Client:
                     else:
                         self.send_shopping_list(shopping_list)
 
-            elif choice == "3":
+            elif choice == "3": 
+                url = input("Enter the url of the shopping list: ")
+
+                key_exists = any(item['url'] == shopping_list['url'] for item in self.shopping_lists)
+
+                if not key_exists: 
+                    sl = self.request_shopping_list(url)
+                    print(sl)
+                    shopList = ShoppingListCRDT.ShoppingListCRDT(sl["url"], sl["additions"], sl["removals"])
+                    shopList.set_key(sl["key"])
+                    
+                    self.shopping_lists.append(shopList)
+
+                else: 
+                    print("You already have this shopping list")
+                    continue
+
+            elif choice == "4":
                 if self.connected: 
                     self.connected = False
                     print("You are now offline")
@@ -107,7 +125,7 @@ class Client:
                     self.connected = True
                     print("You are now online")
 
-            elif choice == "4":
+            elif choice == "5":
                 print("exit")
                 break
             else:
