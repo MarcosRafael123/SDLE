@@ -254,13 +254,46 @@ class Server:
 
                 print(self.servers)
 
+                print("REP1: ", self.replicas)
+
                 # send to broker and to server that will take the changes in to be updated
-                if key in self.replicas:
+                """ if key in self.replicas:
                     self.replicas[key] = self.replicas[key].extend(entry['sls'])
                 else:
                     self.replicas[key] = entry['sls']
+ """
+                if key in self.replicas:
+                    existing_entries = {item['url']: item for item in self.replicas[key]}
+                    print("entries: ", existing_entries)
 
-                #print(self.replicas)
+                    for new_entry in entry['sls']:
+                        url = new_entry['url']
+                        print("url: ", url)
+
+                        if url in existing_entries:
+                            # Update the existing entry
+                            old = ShoppingListCRDT.ShoppingListCRDT(existing_entries[url]['url'], existing_entries[url]['additions'], existing_entries[url]['removals'])
+                            old.set_key(existing_entries[url]['key'])
+
+                            new = ShoppingListCRDT.ShoppingListCRDT(new_entry['url'], new_entry['additions'], new_entry['removals'])
+                            new.set_key(new_entry['key'])
+
+                            merged = old.merge(new)
+
+                            existing_entries[url]['items'] = merged.get_items()
+                            existing_entries[url]['additions'] = merged.get_additions()
+                            existing_entries[url]['removals'] = merged.get_removals()
+
+                            #existing_entries[url].update(new_entry)
+                        else:
+                            # Add new entry
+                            print("BBBBBBBBB")
+                            self.replicas[key].append(new_entry)
+
+                else: 
+                    self.replicas[key] = entry['sls']
+
+                print("REP2: ", self.replicas)
 
                 # send to broker
                 server = self.context.socket(zmq.DEALER)
@@ -268,6 +301,10 @@ class Server:
                 server.send_multipart([("ring:" + json.dumps(self.servers)).encode('utf-8')])
 
                 # send to server
+                """ if len(order) == 1: 
+
+                else: """
+                print("REP: ", self.replicas)
                 server = self.context.socket(zmq.DEALER)
                 server.connect("tcp://localhost:" + str(self.servers[order[len(order) - 1]]))
                 server.send(("ring:" + json.dumps(self.servers)).encode('utf-8'))
@@ -337,6 +374,7 @@ class Server:
                     self.send_replicas()
 
                 elif SHOPPINGLISTS in message_received[1].decode('utf-8'):
+                    print(message_received)
                     message = message_received[1].decode('utf-8')[4:]
 
                     print("RECEIVEDDDDD YESSSSSSSSSSSS")
@@ -378,7 +416,7 @@ class Server:
 
                     self.replicas[key_part] = replica
 
-                    print("Replicas: ", self.replicas.keys())
+                    print("Replicas: ", self.replicas)
 
                 elif RMREP in message_received[1].decode('utf-8'):
                     message = message_received[1].decode('utf-8')[7:]
@@ -401,6 +439,7 @@ class Server:
                     if message["timestamp"] > self.servers["timestamp"]:
                         print("RING: ", message)
                         self.servers = message
+                        self.send_servers_ring()    
                         self.transfer_shopping_lists()
                         self.send_replicas()
 

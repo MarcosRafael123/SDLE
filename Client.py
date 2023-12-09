@@ -71,6 +71,20 @@ class Client:
                     continue
 
                 while True:
+                    sl = self.request_shopping_list(shopping_list.get_url())
+
+                    print(sl)
+
+                    if sl is not None:
+                        shoppinglist = ShoppingListCRDT.ShoppingListCRDT(sl["url"], sl["additions"], sl["removals"])
+                        shoppinglist.set_key(sl["key"])
+
+                        print("Before merge: ", shopping_list.get_items())
+
+                        shopping_list = shopping_list.merge(shoppinglist)
+
+                        print("After merge: ", shopping_list.get_items())
+
                     self.inspect_shopping_list(shopping_list)
 
                     print("1) Add item")
@@ -85,20 +99,10 @@ class Client:
                         self.remove_item_shopping_list(shopping_list)
                     else:
                         break
-                    
-                    sl = self.request_shopping_list(shopping_list.get_url())
+                  
+                    print("After editing: ", shopping_list.get_items())
 
-                    #print(sl)
-
-                    if sl is not None:
-                        shoppinglist = ShoppingListCRDT.ShoppingListCRDT(sl["url"], sl["additions"], sl["removals"])
-                        shoppinglist.set_key(sl["key"])
-
-                        shopping_list = shopping_list.merge(shoppinglist)
-
-                        self.send_shopping_list(shopping_list)
-                    else:
-                        self.send_shopping_list(shopping_list)
+                    self.send_shopping_list(shopping_list)
 
             elif choice == "3": 
                 url = input("Enter the url of the shopping list: ")
