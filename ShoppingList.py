@@ -5,7 +5,6 @@ class ShoppingList :
         self.key = None
         self.timestamp = None
 
-    # getters
     def get_url(self):
         return self.url
     
@@ -18,11 +17,9 @@ class ShoppingList :
     def get_timestamp(self):
         return self.timestamp
     
-    # setters
     def set_timestamp(self, timestamp):
         self.timestamp = timestamp
 
-    # other methods
     def print_list(self):
         print("Shopping list for " + self.url + ":")
         for item in self.items:

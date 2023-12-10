@@ -1,7 +1,7 @@
 class Item: 
-    def __init__(self, name):
+    def __init__(self, name, quantity):
         self.name = name
-        self.quantity = 1
+        self.quantity = quantity
 
     def add_quantity(self, quantity):
         self.quantity += quantity

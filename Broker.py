@@ -11,8 +11,8 @@ REQUEST_SHOPPING_LIST = "requestSL:"
 
 class Broker: 
     def __init__(self, portFrontend, portBackend, nodes=None, hash_func = hashlib.sha256): 
-        self.portFrontend = portFrontend # for clients
-        self.portBackend = portBackend # for servers
+        self.portFrontend = portFrontend
+        self.portBackend = portBackend
         self.hash_func = hash_func
         self.ring = {}
         self.sorted_keys = []
@@ -79,12 +79,9 @@ class Broker:
                 msg = backend.recv_multipart()
 
                 print("BACKEND MESSAGE RECEIVED:")
-                #print(msg)
                 reply = msg[1]
-                #print(reply)
                 
                 if (PORT in reply.decode('utf-8')):
-                    print("CCCCC")
                     key = self.add_node(reply.decode('utf-8').split(':')[1].strip('"'))
 
                     message = str(key)
@@ -103,8 +100,6 @@ class Broker:
                 if RING in msg[1].decode('utf-8'):
                     print("Received ring")
 
-                    #print(msg)
-
                     received = json.loads(reply.decode('utf-8')[5:])
                     ring_received = {int(key): value if key != 'timestamp' else value for key, value in received.items() if key != 'timestamp'}
                     ring_received["timestamp"] = received["timestamp"]
@@ -114,13 +109,6 @@ class Broker:
                     if(self.ring['timestamp'] < ring_received['timestamp']):
                         self.ring = ring_received
                         print(self.ring)
-
-                """ # Forward message to client if it's not a READY
-                elif reply != LRU_READY:
-                    if(len(msg) == 3): 
-                        frontend.send_multipart([msg[1], msg[2]])
-                    else:
-                        frontend.send_multipart(msg) """
                         
 
             if frontend in sockets and sockets[frontend] == zmq.POLLIN:
@@ -138,7 +126,7 @@ class Broker:
                     print("NEXT SERVERS: ", next_servers)
 
                     start_time = time.time()
-                    timeout = 2 # seconds
+                    timeout = 2
 
                     success = False
 
@@ -183,7 +171,6 @@ class Broker:
                     if (shoppingList["key"] == None):
                         key = self._hash(shoppingList["url"])
                         shoppingList["key"] = key
-                        #msg[2] = ("sl:" + json.dumps(shoppingList) + ":").encode('utf-8')
                         print("SHOPPING LIST: ", shoppingList)
 
                     server_key, server_port = self.redirect_shopping_list(shoppingList)
@@ -200,7 +187,7 @@ class Broker:
                     print("RING STATE: ", self.ring)
 
                     start_time = time.time()
-                    timeout = 2 # seconds
+                    timeout = 2
 
                     success = False
 
@@ -276,26 +263,7 @@ class Broker:
         self.sorted_keys.append(key)
         self.sorted_keys.sort()
         print(self.ring)
-        return key
-
-"""     def remove_node(self, node):
-        for i in range(self.replicas):
-            replica_key = self._hash(f"{node}:{i}")
-            del self.ring[replica_key]
-            self.sorted_keys.remove(replica_key)
-
-    def get_node(self, key):
-        if not self.ring:
-            return None
-
-        h = self._hash(key)
-        nodes = self.sorted_keys
-        for i in range(len(nodes)):
-            if h <= nodes[i]:
-                return self.ring[nodes[i]]
-        return self.ring[nodes[0]]
- """
-        
+        return key        
         
 
 def main():

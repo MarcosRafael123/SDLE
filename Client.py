@@ -6,6 +6,7 @@ import ShoppingListCRDT
 import json
 import time
 import sqlite3
+import Item
 
 REQUEST_TIMEOUT = 2500
 REQUEST_RETRIES = 3
@@ -14,32 +15,22 @@ SERVER_ENDPOINT = "tcp://localhost:5555"
 LRU_READY = "\x01"
 
 class Client: 
-    def __init__(self, port, username): 
-        """ self.name = name
-        self.email = email
-        self.password = password
-        self.host = None  """
+    def __init__(self, port, username):
         self.username = username
         self.context = zmq.Context()
         self.brokerPorts = ["5555"]
         self.port = port 
         self.connected = True
         self.shopping_lists = []
+        self.sls_offline = []
+        self.items_offline = {}
         self.load_schema()
         self.run()
         
-    """ def set_host(self, host):
-        self.host = host """
 
     def set_port(self, port):
         self.port = port    
 
-    """ def get_username(self):
-        return self.username
-
-    def get_host(self):
-        return self.host
-     """
     def get_port(self):
         return self.port
 
@@ -63,54 +54,28 @@ class Client:
 
             if choice == "1":
                 url = input("Enter the url of the shopping list: ")
-                self.create_shopping_list(url)
+                state = self.create_shopping_list(url)
+
+                if state == -1: 
+                    print("URL already in use")
                 
             elif choice == "2":
                 
                 shopping_list = self.display_shopping_lists()
+                
 
                 if shopping_list == -1:
                     continue
 
                 while True:
-                    sl = self.request_shopping_list(shopping_list.get_url())
+                    if self.connected:
+                        sl = self.request_shopping_list(shopping_list.get_url())
 
-                    print(sl)
+                        if sl is not None:
+                            shoppinglist = ShoppingListCRDT.ShoppingListCRDT(sl["url"], sl["additions"], sl["removals"])
+                            shoppinglist.set_key(sl["key"])
 
-                    if sl is not None:
-                        shoppinglist = ShoppingListCRDT.ShoppingListCRDT(sl["url"], sl["additions"], sl["removals"])
-                        shoppinglist.set_key(sl["key"])
-
-                        print("Before merge: ", shopping_list.get_items())
-
-                        shopping_list = shopping_list.merge(shoppinglist)
-
-                        print("After merge: ", shopping_list.get_items())
-
-                        # Connect to the database and add the item to the Items table
-                        connection = sqlite3.connect(self.username + '.db')
-                        cursor = connection.cursor()
-
-                        # Retrieve the shopping list ID based on some identifier (e.g., URL)
-                        """ cursor.execute("SELECT id FROM ShoppingLists WHERE url=?", (shopping_list.get_url(),))
-                        shopping_list_url = cursor.fetchone()[0] """
-
-                        # Try to insert the item; if it already exists, it will be ignored
-                        # Try to update the quantity of an existing item
-                        print("SHOPPING LIST GET ITEMS: ", shopping_list.get_items())
-                        for key, value in shopping_list.get_items().items():
-                            print("KEY:", key)
-                            print("VALUE: ", value)
-                            cursor.execute("UPDATE Items SET quantity = ? WHERE shopping_list_id = ? AND name = ?",
-                                        (value, shopping_list.get_url(), key))
-
-                            # Check if the update affected any rows; if not, insert a new item
-                            if cursor.rowcount == 0:
-                                cursor.execute("INSERT INTO Items (shopping_list_id, name, quantity) VALUES (?, ?, ?)",
-                                            (shopping_list.get_url(), key, value))
-
-                        connection.commit()
-                        connection.close()
+                            shopping_list = shopping_list.merge(shoppinglist)
 
                     self.inspect_shopping_list(shopping_list)
 
@@ -121,32 +86,38 @@ class Client:
                     choice2 = input("Enter your choice: ")
                     
                     if choice2 == "1":
-                        self.add_item_shopping_list(shopping_list)
+                        shopping_list = self.add_item_shopping_list(shopping_list)
                     elif choice2 == "2": 
-                        self.remove_item_shopping_list(shopping_list)
+                        shopping_list = self.remove_item_shopping_list(shopping_list)
                     else:
                         break
-                  
-                    print("After editing: ", shopping_list.get_items())
 
-                    self.send_shopping_list(shopping_list)
+                    for i in range(0, len(self.shopping_lists)): 
+                        if self.shopping_lists[i].get_url() == shopping_list.get_url(): 
+                            self.shopping_lists[i] = shopping_list
+                            break
+
+                    if self.connected:
+                        self.send_shopping_list(shopping_list)
 
             elif choice == "3": 
-                url = input("Enter the url of the shopping list: ")
+                if self.connected: 
+                    url = input("Enter the url of the shopping list: ")
 
-                key_exists = any(item.get_url() == url for item in self.shopping_lists)
+                    key_exists = any(item.get_url() == url for item in self.shopping_lists)
 
-                if not key_exists: 
-                    sl = self.request_shopping_list(url)
-                    print(sl)
-                    shopList = ShoppingListCRDT.ShoppingListCRDT(sl["url"], sl["additions"], sl["removals"])
-                    shopList.set_key(sl["key"])
-                    
-                    self.shopping_lists.append(shopList)
+                    if not key_exists: 
+                        sl = self.request_shopping_list(url)
+                        shopList = ShoppingListCRDT.ShoppingListCRDT(sl["url"], sl["additions"], sl["removals"])
+                        shopList.set_key(sl["key"])
+                        
+                        self.shopping_lists.append(shopList)
 
+                    else: 
+                        print("You already have this shopping list")
+                        continue
                 else: 
-                    print("You already have this shopping list")
-                    continue
+                    print("You are not connected, cannot make requests to servers to join other shopping lists")
 
             elif choice == "4":
                 if self.connected: 
@@ -155,6 +126,7 @@ class Client:
                 else:
                     self.connected = True
                     print("You are now online")
+                    self.update_from_offline()
 
             elif choice == "5":
                 print("exit")
@@ -166,32 +138,13 @@ class Client:
     def display_shopping_lists(self):
         counter = 1
         dict = {}
-        shopping_lists = []
 
-        # Connect to the database and add the item to the Items table
-        connection = sqlite3.connect(self.username + '.db')
-        cursor = connection.cursor()
-
-        # Retrieve the shopping list ID based on some identifier (e.g., URL)
-        cursor.execute("SELECT * FROM ShoppingLists WHERE client_username=?", (self.username,))
-        sls = cursor.fetchall()
-
-        for sl in sls:
-            print(sl)
-            shopping_list = ShoppingListCRDT.ShoppingListCRDT(sl[2])
-            shopping_lists.append(shopping_list)
-
-
-        connection.commit()
-        connection.close()
-
-        if shopping_lists == []:
+        if self.shopping_lists == []:
             print("You have no shopping lists")
             return -1
 
         while True:
-            for shopping_list in shopping_lists:
-                print(shopping_list.get_url())
+            for shopping_list in self.shopping_lists:
                 dict[counter] = shopping_list
                 print(str(counter) + ") " + shopping_list.get_url())
                 counter += 1
@@ -212,26 +165,23 @@ class Client:
         for i in range(0, int(quantity)):
             shopping_list.add_item(item)
 
-        # Connect to the database and add the item to the Items table
         connection = sqlite3.connect(self.username + '.db')
         cursor = connection.cursor()
 
-        # Retrieve the shopping list ID based on some identifier (e.g., URL)
-        """ cursor.execute("SELECT id FROM ShoppingLists WHERE url=?", (shopping_list.get_url(),))
-        shopping_list_url = cursor.fetchone()[0] """
+        cursor.execute("SELECT url FROM ShoppingLists WHERE url=?", (shopping_list.get_url(),))
+        shopping_list_url = cursor.fetchone()[0]
 
-        # Try to insert the item; if it already exists, it will be ignored
-        # Try to update the quantity of an existing item
-        cursor.execute("UPDATE Items SET quantity = ? WHERE shopping_list_id = ? AND name = ?",
-                    (shopping_list.get_items()[item], shopping_list.get_url(), item))
+        cursor.execute("UPDATE Items SET quantity = quantity + ? WHERE shopping_list_id = ? AND name = ?",
+                    (int(quantity), shopping_list_url, item))
 
-        # Check if the update affected any rows; if not, insert a new item
         if cursor.rowcount == 0:
             cursor.execute("INSERT INTO Items (shopping_list_id, name, quantity) VALUES (?, ?, ?)",
-                        (shopping_list.get_url(), item, shopping_list.get_items()[item]))
+                        (shopping_list.url, item, int(quantity)))
 
         connection.commit()
         connection.close()
+
+        return shopping_list
             
 
     def remove_item_shopping_list(self, shopping_list):
@@ -241,16 +191,8 @@ class Client:
         for i in range(0, int(quantity)):
             shopping_list.remove_item(item)
 
-        # Connect to the database and add the item to the Items table
         connection = sqlite3.connect(self.username + '.db')
         cursor = connection.cursor()
-
-        # Retrieve the shopping list ID based on some identifier (e.g., URL)
-        """ cursor.execute("SELECT id FROM ShoppingLists WHERE url=?", (shopping_list.get_url(),))
-        shopping_list_url = cursor.fetchone()[0] """
-
-        """ cursor.execute("UPDATE Items SET quantity = CASE WHEN (quantity - ?) < 0 THEN 0 ELSE (quantity - ?) END WHERE shopping_list_id = ? AND name = ?",
-                       (int(quantity), int(quantity), shopping_list_url, item)) """
 
         if shopping_list.get_items()[item] != 0:
             cursor.execute("UPDATE Items SET quantity = ? WHERE shopping_list_id = ? AND name = ?",
@@ -261,6 +203,8 @@ class Client:
 
         connection.commit()
         connection.close()
+
+        return shopping_list
 
     def inspect_shopping_list(self, shoppinglist):
         shoppinglist.print_list()
@@ -279,57 +223,115 @@ class Client:
     def unpack_message(self, msg):
         return json.loads(msg[2])
 
-    def create_shopping_list(self, url):
-        
-        shopping_list = ShoppingListCRDT.ShoppingListCRDT(url)
-        #shopping_list.set_timestamp(time.time())
+    def update_from_offline(self): 
 
-        self.shopping_lists.append(shopping_list)
-
-        # Insert the shopping list into the database with the corresponding client ID
-        connection = sqlite3.connect(self.username + '.db')
-        cursor = connection.cursor()
-
-        # Retrieve the client ID based on the username
-        cursor.execute("SELECT id FROM Clients WHERE username=?", (self.username,))
-
-        # Insert the shopping list with the associated client ID
-        key_value = shopping_list.get_key() or ''
-        cursor.execute("SELECT COUNT(*) FROM ShoppingLists WHERE url = ?", (url,))
-        result = cursor.fetchone()
-        if result[0] == 0:
-            cursor.execute("INSERT INTO ShoppingLists (client_username, url, key) VALUES (?, ?, ?)",
-                        (self.username, url, key_value))
-
-        connection.commit()
-        connection.close()
-
-        if self.connected:  # Check the number of elements in the list
+        for shopping_list in self.sls_offline: 
             logging.info("Connecting to server…")
             client = self.context.socket(zmq.DEALER)
             client.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
             client.connect("tcp://localhost:" + self.brokerPorts[0])
-            for sl in self.shopping_lists:
-                print("Shopping lists remaining: ", len(self.shopping_lists))
-                print("Sending message for:", sl.get_url())
-                client.send_multipart([b"sl", self.pack_message(sl).encode('utf-8')])
-                print("Message sent")
+            client.send_multipart([b"sl", self.pack_message(shopping_list).encode('utf-8')])
 
-                poller = zmq.Poller()
-                poller.register(client, zmq.POLLIN)
+            poller = zmq.Poller()
+            poller.register(client, zmq.POLLIN)
 
-                while True:
-                    events = dict(poller.poll())
+            while True:
+                events = dict(poller.poll())
+                
+                if client in events and events[client] == zmq.POLLIN:
+                    reply = client.recv_multipart()
+                    print(reply)
+
+                    if "already exists" in reply[0].decode('utf-8'): 
+                        self.shopping_lists.remove(shopping_list)
+
+                        connection = sqlite3.connect(self.username + '.db')
+                        cursor = connection.cursor()
+
+                        cursor.execute("DELETE FROM ShoppingLists WHERE url = ?", (shopping_list.get_url(),))
+
+                        connection.commit()
+                        connection.close()
                     
-                    if client in events and events[client] == zmq.POLLIN:
-                        reply = client.recv_multipart()
-                        print(reply)
-                        #print("Erasing sl with url:", sl.get_url())
-                        #self.shopping_lists.pop(0)
-                        break
-            self.shopping_lists.clear()
-            
-            
+                    else: 
+                        connection = sqlite3.connect(self.username + '.db')
+                        cursor = connection.cursor()
+
+                        key_value = shopping_list.get_key() or ''
+                        cursor.execute("SELECT COUNT(*) FROM ShoppingLists WHERE url = ?", (shopping_list.get_url(),))
+                        result = cursor.fetchone()
+                        if result[0] == 0:
+                            cursor.execute("INSERT INTO ShoppingLists (client_username, url, key) VALUES (?, ?, ?)",
+                                        (self.username, shopping_list.get_url(), key_value))
+
+                        connection.commit()
+                        connection.close()
+
+                    break
+
+            client.close()
+    
+    def create_shopping_list(self, url):
+
+        shopping_list = ShoppingListCRDT.ShoppingListCRDT(url)
+
+        if self.connected:
+            self.shopping_lists.append(shopping_list)
+
+            logging.info("Connecting to server…")
+            client = self.context.socket(zmq.DEALER)
+            client.setsockopt_string(zmq.IDENTITY, str(self.port), 'utf-8')
+            client.connect("tcp://localhost:" + self.brokerPorts[0])
+            client.send_multipart([b"sl", self.pack_message(shopping_list).encode('utf-8')])
+
+            poller = zmq.Poller()
+            poller.register(client, zmq.POLLIN)
+
+            while True:
+                events = dict(poller.poll())
+                
+                if client in events and events[client] == zmq.POLLIN:
+                    reply = client.recv_multipart()
+                    print(reply)
+
+                    if "already exists" in reply[0].decode('utf-8'): 
+                        return -1
+                    
+                    else: 
+                        connection = sqlite3.connect(self.username + '.db')
+                        cursor = connection.cursor()
+
+                        key_value = shopping_list.get_key() or ''
+                        cursor.execute("SELECT COUNT(*) FROM ShoppingLists WHERE url = ?", (shopping_list.get_url(),))
+                        result = cursor.fetchone()
+                        if result[0] == 0:
+                            cursor.execute("INSERT INTO ShoppingLists (client_username, url, key) VALUES (?, ?, ?)",
+                                        (self.username, shopping_list.get_url(), key_value))
+
+                        connection.commit()
+                        connection.close()
+
+                    break
+
+        else: 
+
+            connection = sqlite3.connect(self.username + '.db')
+            cursor = connection.cursor()
+
+            key_value = shopping_list.get_key() or ''
+            cursor.execute("SELECT COUNT(*) FROM ShoppingLists WHERE url = ?", (shopping_list.get_url(),))
+            result = cursor.fetchone()
+            if result[0] == 0:
+                cursor.execute("INSERT INTO ShoppingLists (client_username, url, key) VALUES (?, ?, ?)",
+                            (self.username, shopping_list.get_url(), key_value))
+
+            connection.commit()
+            connection.close()
+    
+            self.sls_offline.append(shopping_list)
+            self.shopping_lists.append(shopping_list)
+
+
     def request_shopping_list(self, url): 
 
         logging.info("Connecting to server…")
@@ -349,7 +351,6 @@ class Client:
             
             if client in events and events[client] == zmq.POLLIN:
                 reply = client.recv_multipart()
-                print(reply)
                 reply = reply[0].decode('utf-8')
 
                 if reply == "Shopping list not found": 
@@ -357,21 +358,17 @@ class Client:
                 
                 sl = json.loads(reply)
 
-                print("SL AFTER LOADS: ", sl)
                 break
 
-        # Insert the shopping list into the database with the corresponding client ID
         connection = sqlite3.connect(self.username + '.db')
         cursor = connection.cursor()
 
-        # Retrieve the client ID based on the username
         cursor.execute("SELECT id FROM Clients WHERE username=?", (self.username,))
 
         cursor.execute("SELECT * FROM ShoppingLists WHERE client_username=? AND url=?", (self.username, url))
         existing_list = cursor.fetchone()
 
         if not existing_list:
-            # Insert the shopping list with the associated client ID
             key_value = sl["key"] or ''
             cursor.execute("INSERT INTO ShoppingLists (client_username, url, key) VALUES (?, ?, ?)",
                         (self.username, url, str(key_value)))
@@ -401,29 +398,30 @@ class Client:
                 print(reply)
                 break
 
-
         return
     
 
     def load_schema(self):
-        # Connect to the SQLite database
         connection = sqlite3.connect(self.username + '.db')
         cursor = connection.cursor()
 
-        # Read and execute the SQL file
         with open('database/shopping_lists.sql', 'r') as sql_file:
-            print("EWEWREWFWEFEFREGH")
             sql_script = sql_file.read()
             cursor.executescript(sql_script)
         
-        # Check if the client already exists
         cursor.execute("SELECT id FROM Clients WHERE username=? AND port=?", (self.username, self.port))
         existing_client = cursor.fetchone()
 
         if existing_client:
             print("Connecting to existing client...")
-            # Handle connecting to the existing client here
-            # Maybe set some instance variables to keep track of this client
+
+            cursor.execute("SELECT * FROM ShoppingLists WHERE client_username=?", (self.username,))
+            sls = cursor.fetchall()
+
+            for sl in sls:
+                shopping_list = ShoppingListCRDT.ShoppingListCRDT(sl[2])
+                self.shopping_lists.append(shopping_list)
+
         else:
             cursor.execute("INSERT INTO Clients (username, port) VALUES (?, ?)", (self.username, self.port))
 

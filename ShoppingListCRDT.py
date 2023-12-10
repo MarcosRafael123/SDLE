@@ -11,8 +11,6 @@ class ShoppingListCRDT:
         self.key = None
 
     def merge(self, remote):
-        #print(self.additions)
-        #print(self.removals)
         merged_additions = {item: max(self.additions.get(item, 0), remote.additions.get(item, 0)) for item in set(self.additions) | set(remote.additions)}
         merged_removals = {item: max(self.removals.get(item, 0), remote.removals.get(item, 0)) for item in set(self.removals) | set(remote.removals)}
 
@@ -48,16 +46,3 @@ class ShoppingListCRDT:
     def print_list(self):
         print("Shopping list for ", self.url, ":")
         print(self.get_items())
-
-
-""" local_shopping_list = ShoppingListCRDT({'apple': 2, 'banana': 1}, {'apple': 1})
-remote_shopping_list = ShoppingListCRDT({'banana': 2, 'orange': 1}, {'banana': 1})
-
-local_shopping_list.add_item('grape')
-local_shopping_list.add_item('apple')
-
-remote_shopping_list.remove_item('orange')
-
-merged_shopping_list = local_shopping_list.merge(remote_shopping_list)
-
-print("Merged Shopping List Items:", merged_shopping_list.get_items()) """
