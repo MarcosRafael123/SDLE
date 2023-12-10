@@ -61,7 +61,10 @@ class Client:
 
             if choice == "1":
                 url = input("Enter the url of the shopping list: ")
-                self.create_shopping_list(url)
+                state = self.create_shopping_list(url)
+
+                if state == -1: 
+                    print("URL already in use")
                 
             elif choice == "2":
                 
@@ -107,7 +110,7 @@ class Client:
             elif choice == "3": 
                 url = input("Enter the url of the shopping list: ")
 
-                key_exists = any(item['url'] == shopping_list['url'] for item in self.shopping_lists)
+                key_exists = any(item.get_url() == url for item in self.shopping_lists)
 
                 if not key_exists: 
                     sl = self.request_shopping_list(url)
@@ -196,7 +199,7 @@ class Client:
         shopping_list = ShoppingListCRDT.ShoppingListCRDT(url)
         #shopping_list.set_timestamp(time.time())
 
-        self.shopping_lists.append(shopping_list)
+        #self.shopping_lists.append(shopping_list)
 
         logging.info("Connecting to server…")
         client = self.context.socket(zmq.DEALER)
@@ -213,6 +216,13 @@ class Client:
             if client in events and events[client] == zmq.POLLIN:
                 reply = client.recv_multipart()
                 print(reply)
+
+                if "already exists" in reply[0].decode('utf-8'): 
+                    return -1
+                
+                else: 
+                    self.shopping_lists.append(shopping_list)
+
                 break
             
     def request_shopping_list(self, url): 

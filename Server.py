@@ -62,6 +62,7 @@ class Server:
         dictionary["items"] = shoppinglist.get_items()
 
         return json.dumps(dictionary, sort_keys=True)
+        
     
     def unpack_message(self, msg):
         return json.loads(msg[1].decode('utf-8')[3:])
@@ -71,6 +72,7 @@ class Server:
 
         if not key_exists:
             self.shopping_lists.append(shopping_list)
+            return 1
         else:
             print(f"The key {shopping_list} already exists in the list.")
             sl = ShoppingListCRDT.ShoppingListCRDT(shopping_list['url'], shopping_list['additions'], shopping_list['removals'])
@@ -89,6 +91,8 @@ class Server:
                 self.shopping_lists[index]['removals'] = sl_merged.get_removals()
 
                 print("AAAAAAAAAAAAAAA: ", self.shopping_lists[index])
+
+            return 2
 
     
     def clockwise_order(self, key):
@@ -471,9 +475,7 @@ class Server:
                     worker.send_multipart([msg[1], json.dumps(sl).encode('utf-8')])
                 
                 elif(SHOPPINGLIST in msg[0].decode('utf-8')):
-                    response = "received shopping list".encode('utf-8')
                     print(msg)
-                    worker.send_multipart([msg[1], response])
 
                     message = msg[0].decode('utf-8')[3:]
 
@@ -490,8 +492,20 @@ class Server:
 
                     if key_part == str(self.key):
                         print("BElongs here")
-                        self.add_to_shopping_lists(json.loads(json_part))
+
+                        sl = json.loads(json_part)
+
+                        state = self.add_to_shopping_lists(sl)
+
+                        if state == 2: 
+                            response = "already exists".encode('utf-8')
+                        else: 
+                            response = "received shopping list".encode('utf-8')
+
+                        worker.send_multipart([msg[1], response])
+
                         self.send_replicas()
+
                     else: 
                         print("Goes to hinted handoff")
 
