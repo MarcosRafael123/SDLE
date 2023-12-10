@@ -9,6 +9,7 @@ import re
 import threading
 import random
 import ShoppingListCRDT
+import sqlite3
 
 LRU_READY = "\x01"
 SHOPPINGLIST = "sl:"
@@ -34,6 +35,7 @@ class Server:
         self.socket = None
         logging.info("Connecting to broker...")
         self.add_to_ring()
+        self.load_schema()
         self.run()
         
     def add_to_ring(self):
@@ -209,6 +211,22 @@ class Server:
             #print("Sending to server: ", str(server_to_send))
             server.send(("sl:" + sl).encode('utf-8'))
             self.shopping_lists.remove(shopping_list)
+            print("ASDJFFHGDDFGFDGESSDHDTRETJYTREWETFJFTREWRTFJGFTREWRTGHTFERWERYJTR: ", shopping_list)
+            #PUT HERE THE CODE TO REMOVE THESE TRANSFERED SLS FROM THE ORIGIN SERVERS (STILL NEED TO CORRECT THE BELOW CODE)
+
+            # Insert the shopping list into the database with the corresponding client ID
+            connection = sqlite3.connect('server' + self.port + '.db')
+            cursor = connection.cursor()
+
+            # Insert the shopping list with the associated client ID
+            cursor.execute("DELETE FROM ShoppingListsServers WHERE server_port = ?",
+                        (self.port,))
+            
+            cursor.execute("DELETE FROM ItemsServers WHERE shopping_list_servers_id = ?",
+                        (shopping_list["url"],))
+
+            connection.commit()
+            connection.close()
 
         if len(successors) > 2:
             server = self.context.socket(zmq.DEALER)
@@ -362,8 +380,9 @@ class Server:
 
             if self.socket in events and events[self.socket] == zmq.POLLIN:
                 message_received = self.socket.recv_multipart()
+                print("MESSAGE RECEIVED: ", message_received)
         
-                if(SHOPPINGLIST in message_received[1].decode('utf-8')):
+                if(SHOPPINGLIST in message_received[1].decode('utf-8')): #quando há realocação de uma sl por causa da adição de um server
                     #print("Received shopping list")
                     message = message_received[1].decode('utf-8')[3:]
     
@@ -372,8 +391,58 @@ class Server:
 
                     #print("Shopping lists: ", self.shopping_lists)
                     self.send_replicas()
+                    print("POOOOOOOOOOOOOOORRRRRTTTTTTT: ", self.port)
 
-                elif SHOPPINGLISTS in message_received[1].decode('utf-8'):
+                    if json.loads(message)["items"] == {}:
+                        # Insert the shopping list into the database with the corresponding client ID
+                        connection = sqlite3.connect('server' + self.port + '.db')
+                        cursor = connection.cursor()
+
+                        # Insert the shopping list with the associated client ID
+                        print("URLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL: ", json.loads(message)["url"])
+                        cursor.execute("SELECT COUNT(*) FROM ShoppingListsServers WHERE url = ?", (json.loads(message)["url"],))
+                        result = cursor.fetchone()
+
+                        # If the count is zero (i.e., the URL doesn't exist), then perform the insertion
+                        if result[0] == 0:
+                            cursor.execute("INSERT INTO ShoppingListsServers (server_port, url, key) VALUES (?, ?, ?)",
+                                        (self.port, json.loads(message)["url"], str(json.loads(message)["key"])))
+                        connection.commit()
+                        connection.close()
+                    else:
+                        for key, value in json.loads(message)["items"].items():
+                            print("Key:", key)
+                            print("Value:", value)
+                            connection = sqlite3.connect('server' + self.port + '.db')
+                            cursor = connection.cursor()
+
+                            # Insert the shopping list with the associated client ID
+                            cursor.execute("INSERT INTO ShoppingListsServers (server_port, url, key) VALUES (?, ?, ?)",
+                                        (self.port, json.loads(message)["url"], str(json.loads(message)["key"])))
+
+                            cursor.execute("SELECT COUNT(*) FROM ItemsServers WHERE shopping_list_servers_id = ? AND name = ?",
+                                        (json.loads(message)["url"], key))
+                            result = cursor.fetchone()
+                            if result[0] > 0:
+                                if value > 0:
+                                    cursor.execute("UPDATE ItemsServers SET quantity = ? WHERE shopping_list_servers_id = ? AND name = ?",
+                                        (value, json.loads(message)["url"], key))
+                                else:
+                                    print(key)
+                                    print("DELETING ITEM")
+                                    cursor.execute("DELETE FROM ItemsServers WHERE shopping_list_servers_id=? AND name=?", (json.loads(message)["url"], key))
+
+                            else:
+                                # Record doesn't exist, perform an INSERT
+                                if value > 0:
+                                    cursor.execute("INSERT INTO ItemsServers (shopping_list_servers_id, name, quantity) VALUES (?, ?, ?)",
+                                        (json.loads(message)["url"], key, value))
+
+                            connection.commit()
+                            connection.close()
+
+                elif SHOPPINGLISTS in message_received[1].decode('utf-8'): #quando um server recebe do hinted handoff (reconecta a tempo e recebe as shopping lists que ficaram em hold no outro servidor)
+                    print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS")
                     print(message_received)
                     message = message_received[1].decode('utf-8')[4:]
 
@@ -390,6 +459,49 @@ class Server:
                         print(shopping_list)
                         #self.shopping_lists.append(shopping_list)
                         self.add_to_shopping_lists(shopping_list)
+
+                        """ if json.loads(message)["items"] == {}:
+                        # Insert the shopping list into the database with the corresponding client ID
+                            connection = sqlite3.connect('server' + self.port + '.db')
+                            cursor = connection.cursor()
+
+                            # Insert the shopping list with the associated client ID
+                            cursor.execute("INSERT INTO ShoppingListsServers (server_port, url, key) VALUES (?, ?, ?)",
+                                        (self.port, json.loads(message)["url"], str(json.loads(message)["key"])))
+
+                            connection.commit()
+                            connection.close()
+                        else:
+                            for key, value in json.loads(message)["items"].items():
+                                print("Key:", key)
+                                print("Value:", value)
+                                connection = sqlite3.connect('server' + self.port + '.db')
+                                cursor = connection.cursor()
+
+                                # Insert the shopping list with the associated client ID
+                                cursor.execute("INSERT INTO ShoppingListsServers (server_port, url, key) VALUES (?, ?, ?)",
+                                            (self.port, json.loads(message)["url"], str(json.loads(message)["key"])))
+
+                                cursor.execute("SELECT COUNT(*) FROM ItemsServers WHERE shopping_list_servers_id = ? AND name = ?",
+                                            (json.loads(message)["url"], key))
+                                result = cursor.fetchone()
+                                if result[0] > 0:
+                                    if value > 0:
+                                        cursor.execute("UPDATE ItemsServers SET quantity = ? WHERE shopping_list_servers_id = ? AND name = ?",
+                                            (value, json.loads(message)["url"], key))
+                                    else:
+                                        print(key)
+                                        print("DELETING ITEM")
+                                        cursor.execute("DELETE FROM ItemsServers WHERE shopping_list_servers_id=? AND name=?", (json.loads(message)["url"], key))
+
+                                else:
+                                    # Record doesn't exist, perform an INSERT
+                                    if value > 0:
+                                        cursor.execute("INSERT INTO ItemsServers (shopping_list_servers_id, name, quantity) VALUES (?, ?, ?)",
+                                            (json.loads(message)["url"], key, value))
+
+                                connection.commit()
+                                connection.close() """
 
                     print("Shopping lists: ", self.shopping_lists)
 
@@ -492,6 +604,47 @@ class Server:
                         print("BElongs here")
                         self.add_to_shopping_lists(json.loads(json_part))
                         self.send_replicas()
+
+                        print("MESSAGE: ", json.loads(json_part)["items"])
+                        if json.loads(json_part)["items"] == {}:
+                            # Insert the shopping list into the database with the corresponding client ID
+                            connection = sqlite3.connect('server' + self.port + '.db')
+                            cursor = connection.cursor()
+
+                            # Insert the shopping list with the associated client ID
+                            cursor.execute("INSERT INTO ShoppingListsServers (server_port, url, key) VALUES (?, ?, ?)",
+                                        (self.port, json.loads(json_part)["url"], str(json.loads(json_part)["key"])))
+
+                            connection.commit()
+                            connection.close()
+                        else:
+                            for key, value in json.loads(json_part)["items"].items():
+                                print("Key:", key)
+                                print("Value:", value)
+                                connection = sqlite3.connect('server' + self.port + '.db')
+                                cursor = connection.cursor()
+
+                                cursor.execute("SELECT COUNT(*) FROM ItemsServers WHERE shopping_list_servers_id = ? AND name = ?",
+                                            (json.loads(json_part)["url"], key))
+                                result = cursor.fetchone()
+                                if result[0] > 0:
+                                    if value > 0:
+                                        cursor.execute("UPDATE ItemsServers SET quantity = ? WHERE shopping_list_servers_id = ? AND name = ?",
+                                            (value, json.loads(json_part)["url"], key))
+                                    else:
+                                        print(key)
+                                        print("DELETING ITEM")
+                                        cursor.execute("DELETE FROM ItemsServers WHERE shopping_list_servers_id=? AND name=?", (json.loads(json_part)["url"], key))
+
+                                else:
+                                    # Record doesn't exist, perform an INSERT
+                                    if value > 0:
+                                        cursor.execute("INSERT INTO ItemsServers (shopping_list_servers_id, name, quantity) VALUES (?, ?, ?)",
+                                            (json.loads(json_part)["url"], key, value))
+
+                                connection.commit()
+                                connection.close()
+
                     else: 
                         print("Goes to hinted handoff")
 
@@ -499,8 +652,7 @@ class Server:
                             self.hinted_handoff[key_part] = {'timestamp': time.time(), 'sls': [json.loads(json_part)]}
                             
                         else: 
-                            self.hinted_handoff[key_part]['sls'] = self.hinted_handoff[key_part]['sls'].append(json.loads(json_part))
-                    
+                            self.hinted_handoff[key_part]['sls'] = self.hinted_handoff[key_part]['sls'].append(json.loads(json_part))                    
 
                 else: 
                     msg.insert(0, msg[2])
@@ -517,6 +669,37 @@ class Server:
             #print("Ring: ", self.servers.keys())
             #print("Replicas: ", self.replicas)
             #print("Hinted handoff: ", self.hinted_handoff)
+
+    def load_schema(self):
+        # Connect to the SQLite database
+        connection = sqlite3.connect('server' + self.port + '.db')
+        cursor = connection.cursor()
+
+        # Read and execute the SQL file
+        with open('database/shopping_lists.sql', 'r') as sql_file:
+            print("EWEWREWFWEFEFREGH")
+            sql_script = sql_file.read()
+            cursor.executescript(sql_script)
+        
+        # Check if the client already exists
+        print("KEY: ", type(self.key))
+        print("PORT: ", self.port)
+        cursor.execute("SELECT id FROM Servers WHERE key=? AND port=?", (str(self.key), self.port))
+        existing_server = cursor.fetchone()
+        print(existing_server)
+
+        if existing_server:
+            print("Connecting to existing server...")
+            """ print(self.key)
+            print(self.port)
+            cursor.execute("SELECT * FROM ShoppingListsServers WHERE server_port=?", (self.port,))
+            sls = cursor.fetchall()
+            print(sls) """
+        else:
+            cursor.execute("INSERT INTO Servers (key, port) VALUES (?, ?)", (str(self.key), self.port))
+
+        connection.commit()
+        connection.close()
             
 
 if __name__ == "__main__":
